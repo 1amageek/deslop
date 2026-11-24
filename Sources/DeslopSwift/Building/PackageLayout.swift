@@ -30,8 +30,7 @@ struct PackageLayout {
         for target in targets {
             let node = tree.child(of: Tree.root, kind: .package, name: target.name)
             tree.setTest(node, target.isTest)
-            let sources = (target.sources ?? []).filter { $0.hasSuffix(".swift") }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-            for source in sources {
+            for source in target.swiftSources {
                 let path = PackageLayout.joined(target.path, source)
                 let directories = source.split(separator: "/").dropLast().map(String.init)
                 var module = node

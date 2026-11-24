@@ -20,10 +20,12 @@ struct IndexUnit: Sendable {
         }
     }
 
-    /// A record the unit depends on: the occurrences of one file.
+    /// A record the unit depends on: the occurrences of one file, or of a
+    /// system module's interface.
     struct Record: Sendable {
         let path: String
         let name: String
+        let isSystem: Bool
     }
 
     let isSystem: Bool

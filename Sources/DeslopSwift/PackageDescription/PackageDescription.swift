@@ -14,6 +14,11 @@ struct PackageDescription: Sendable, Decodable {
         let sources: [String]?
 
         var isTest: Bool { type == "test" }
+
+        /// Its Swift sources, relative to its path, in byte order.
+        var swiftSources: [String] {
+            (sources ?? []).filter { $0.hasSuffix(".swift") }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+        }
         var isSwift: Bool { moduleType == "SwiftTarget" }
 
         enum CodingKeys: String, CodingKey {

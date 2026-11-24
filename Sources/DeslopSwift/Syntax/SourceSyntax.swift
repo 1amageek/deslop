@@ -66,14 +66,6 @@ final class SourceSyntax {
         guard tokens[position] != nil else { return .reach }
         // A name that is no expression, such as an argument label of a
         // memberwise initializer, gives or takes the value whole.
-        // FIXME(INCOMPLETE_IMPLEMENTATION): a key path component (`\.items`)
-        // is also no expression, and is taken for a read. A key path kept in a
-        // value and written through later (`q[keyPath: path].removeAll()`) is a
-        // write the index does not mark at the component, so the leak is
-        // missed. Every reference to a field from a key path takes this path.
-        // Done when a key path's use as writable is followed to its component,
-        // or the frontend states which key path writes it cannot see, with tests
-        // for read-only (`map(\.name)`) and writing uses.
         guard let place = place(at: position) else { return .copy }
         return access(of: place, isField: isField)
     }
@@ -134,6 +126,14 @@ final class SourceSyntax {
             if parent.is(InOutExprSyntax.self) {
                 return .reach
             }
+            if parent.is(KeyPathPropertyComponentSyntax.self) {
+                return SourceSyntax.keyPathAccess(Syntax(parent))
+            }
+            if let list = parent.as(ExprListSyntax.self), let sequence = parent.parent, sequence.is(SequenceExprSyntax.self),
+               SourceSyntax.passesOn(Array(list), current) {
+                current = sequence
+                continue
+            }
             if let list = parent.as(ExprListSyntax.self), parent.parent?.is(SequenceExprSyntax.self) == true {
                 let elements = Array(list)
                 if let at = elements.firstIndex(where: { $0.id == current.id }), at + 1 < elements.count,
@@ -144,6 +144,41 @@ final class SourceSyntax {
             return .copy
         }
         return .copy
+    }
+
+    /// Whether the operation of `elements`, an unfolded sequence of one
+    /// operator, hands `operand` on as its own value: a cast (`as`, `as!`,
+    /// `as?`) hands on its left side, a fallback (`??`) either side. What is
+    /// reached on the result is reached on the operand.
+    private static func passesOn(_ elements: [ExprSyntax], _ operand: Syntax) -> Bool {
+        guard elements.count == 3 else { return false }
+        let side = elements.firstIndex { $0.id == operand.id }
+        if elements[1].is(UnresolvedAsExprSyntax.self) { return side == 0 }
+        if let binary = elements[1].as(BinaryOperatorExprSyntax.self), binary.operator.text == "??" {
+            return side == 0 || side == 2
+        }
+        return false
+    }
+
+    /// What a key path does with the field its component names: writes it
+    /// when it is declared writable, `let path: WritableKeyPath<Queue, [Int]>
+    /// = \.items`; reads it otherwise, as `queues.map(\.label)` does.
+    private static func keyPathAccess(_ component: Syntax) -> Access {
+        var at: Syntax? = component
+        while let node = at, !node.is(KeyPathExprSyntax.self) { at = node.parent }
+        guard let binding = at?.parent?.as(InitializerClauseSyntax.self)?.parent?.as(PatternBindingSyntax.self),
+              let written = binding.typeAnnotation?.type else {
+            // FIXME(INCOMPLETE_IMPLEMENTATION): only a key path declared writable
+            // where it is bound is known to write. One whose writability is
+            // inferred, passed as an argument, or returned (`let p = \Queue.items`
+            // then `q[keyPath: p].removeAll()`) is taken for a read, so a write
+            // through it is missed. Every key path component that names a field
+            // takes this path. Done when a key path's use is followed to where it
+            // writes, with tests for inferred, passed and read-only key paths.
+            return .copy
+        }
+        let name = written.as(IdentifierTypeSyntax.self)?.name.text
+        return name == "WritableKeyPath" || name == "ReferenceWritableKeyPath" ? .reach : .copy
     }
 
     /// Members that lend a view of a value to read it, as Rust's `as_bytes`

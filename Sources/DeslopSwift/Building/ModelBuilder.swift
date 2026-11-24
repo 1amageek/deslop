@@ -27,6 +27,12 @@ struct ModelBuilder {
     private var parentUSR: [ItemID: String] = [:]
     /// Extensions by USR, to the USR of the type each extends.
     private var extendedType: [String: String] = [:]
+    /// The protocols the workspace and its imports declare.
+    private var protocols: Protocols
+    /// By the USR of a type or extension, the protocols it conforms to.
+    private var conformances: [String: Set<String>] = [:]
+    /// By the USR of a class, the classes it inherits from.
+    private var superclasses: [String: Set<String>] = [:]
     private let syntaxOfFile: [FileID: SourceSyntax]
     private var itemAtSite: [Site: ItemID] = [:]
     private var siteOfItem: [ItemID: Site] = [:]
@@ -38,7 +44,8 @@ struct ModelBuilder {
     /// By reference: where it is, and whether the index says it writes.
     private var referenceSites: [(site: Site, writes: Bool)] = []
 
-    init(layout: PackageLayout, sources: [Source]) {
+    init(layout: PackageLayout, sources: [Source], systemProtocols: Protocols = Protocols()) {
+        protocols = systemProtocols
         model = Model(
             language: Language(name: "swift", pathSeparator: "."),
             tree: layout.tree,
@@ -52,6 +59,8 @@ struct ModelBuilder {
     consuming func build() -> Model {
         for source in sources { addTypeSites(source) }
         for source in sources { addDefinitions(source) }
+        markWitnesses()
+        resolveInheritance()
         resolveParents()
         for source in sources { addReferences(source) }
         markCopies()
@@ -92,9 +101,21 @@ struct ModelBuilder {
 
     private mutating func addDefinitions(_ source: Source) {
         let module = model.file(source.file).module
+        protocols.add(source.occurrences)
         for occurrence in source.occurrences {
-            for relation in occurrence.relations where relation.roles.contains(.extendedBy) {
-                extendedType[relation.symbol.usr] = occurrence.symbol.usr
+            for relation in occurrence.relations {
+                if relation.roles.contains(.extendedBy) {
+                    extendedType[relation.symbol.usr] = occurrence.symbol.usr
+                }
+                guard relation.roles.contains(.baseOf) else { continue }
+                switch occurrence.symbol.kind {
+                case .protocol:
+                    conformances[relation.symbol.usr, default: []].insert(occurrence.symbol.usr)
+                case .class:
+                    superclasses[relation.symbol.usr, default: []].insert(occurrence.symbol.usr)
+                default:
+                    break
+                }
             }
         }
         for occurrence in source.occurrences
@@ -110,15 +131,9 @@ struct ModelBuilder {
             let position = SourcePosition(line: occurrence.line, column: occurrence.column)
             let declaration = source.syntax.declaration(at: position)
             guard itemOfUSR[symbol.usr] == nil, let shape = ModelBuilder.shape(symbol, declaration) else { continue }
-            // FIXME(INCOMPLETE_IMPLEMENTATION): a witness is told only by the
-            // index's `overrideOf` relation on its definition. A member written in
-            // a type's body that satisfies a requirement of a protocol the type
-            // conforms to in an empty extension (`extension Machine: Steps {}`)
-            // gets no such relation, so it counts as a working function and as a
-            // wrapper candidate. Every `deslop` run that builds a model takes this
-            // path. Done when such members are marked from the conformances the
-            // index records (`baseOf`) and the requirements of those protocols,
-            // workspace or not, with tests for both placements of the members.
+            // A witness of a conformance declared where the member is written
+            // carries `overrideOf`; one declared elsewhere is told by
+            // `markWitnesses`, once every conformance is known.
             let implementsInterface = symbol.kind == .destructor
                 || occurrence.relations.contains { $0.roles.contains(.overrideOf) }
             let id = ItemID(model.items.count)
@@ -138,6 +153,36 @@ struct ModelBuilder {
             let site = Site(file: source.file, position: position)
             itemAtSite[site] = id
             siteOfItem[id] = site
+        }
+    }
+
+    /// Marks as implementing an interface each function of a type whose name
+    /// is a requirement of a protocol the type conforms to, through any
+    /// refinement: the index relates a witness to its requirement only when
+    /// the conformance is declared where the witness is written, and a
+    /// method written in a type's body may meet one declared in an empty
+    /// extension. Requirements are told apart by name only, so an overload
+    /// that shares a requirement's name is taken for its witness too.
+    private mutating func markWitnesses() {
+        var declaredBy: [String: Set<String>] = [:]
+        for (conformer, declared) in conformances {
+            declaredBy[extendedType[conformer] ?? conformer, default: []].formUnion(declared)
+        }
+        for (item, usr) in parentUSR where model.item(item).kind == .function && !model.item(item).implementsInterface {
+            let declared = declaredBy[extendedType[usr] ?? usr] ?? []
+            let name = model.item(item).name
+            if protocols.requires(name, ofAny: declared) {
+                model.items[item.index].implementsInterface = true
+            }
+        }
+    }
+
+    /// Sets the classes each class inherits from, as the index names them.
+    private mutating func resolveInheritance() {
+        for (subclass, bases) in superclasses {
+            guard let type = itemOfUSR[extendedType[subclass] ?? subclass], model.item(type).kind == .type else { continue }
+            let inherited = bases.compactMap { itemOfUSR[$0] }.filter { $0 != type && model.item($0).kind == .type }
+            model.items[type.index].inherits = Array(Set(inherited)).sorted()
         }
     }
 

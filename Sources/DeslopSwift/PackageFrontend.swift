@@ -26,6 +26,7 @@ public struct PackageFrontend: ModelSource {
         let layout = try PackageLayout(package: package)
         let entries = layout.entries.enumerated().filter { $0.element.indexed }
         var indexed: [String: IndexStoreReader.Indexed] = [:]
+        var systemProtocols = Protocols()
         if !entries.isEmpty {
             if buildsIndex {
                 try toolchain.buildIndex(root: packageRoot, scratch: scratchPath)
@@ -33,7 +34,9 @@ public struct PackageFrontend: ModelSource {
             let store = try toolchain.indexStore(in: scratchPath)
             let library = try IndexStoreLibrary(at: try toolchain.indexStoreLibrary())
             let reader = IndexStoreReader(library: library, store: store)
-            indexed = try reader.occurrences(of: Set(entries.map(\.element.absolutePath)))
+            let read = try reader.read(Set(entries.map(\.element.absolutePath)))
+            indexed = read.files
+            systemProtocols = read.systemProtocols
         }
         var sources: [ModelBuilder.Source] = []
         for (index, entry) in entries {
@@ -51,7 +54,7 @@ public struct PackageFrontend: ModelSource {
                 occurrences: found.occurrences.sorted { ($0.line, $0.column) < ($1.line, $1.column) }
             ))
         }
-        let model = ModelBuilder(layout: layout, sources: sources).build()
+        let model = ModelBuilder(layout: layout, sources: sources, systemProtocols: systemProtocols).build()
         do {
             try ModelCodec.validate(model)
         } catch {

@@ -164,13 +164,13 @@ final class IndexStoreLibrary {
         return context.elements
     }
 
-    /// A non-system record dependency, if `dependency` is one.
+    /// A record dependency, if `dependency` is one.
     private func record(_ dependency: cis_unit_dependency_t?) -> IndexUnit.Record? {
-        guard !dependencyIsSystem(dependency),
-              dependencyKind(dependency) == UInt32(CIS_UNIT_DEPENDENCY_RECORD) else { return nil }
+        guard dependencyKind(dependency) == UInt32(CIS_UNIT_DEPENDENCY_RECORD) else { return nil }
         return IndexUnit.Record(
             path: IndexStoreLibrary.string(dependencyFilePath(dependency)),
-            name: IndexStoreLibrary.string(dependencyName(dependency))
+            name: IndexStoreLibrary.string(dependencyName(dependency)),
+            isSystem: dependencyIsSystem(dependency)
         )
     }
 
