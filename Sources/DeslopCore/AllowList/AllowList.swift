@@ -45,6 +45,20 @@ public struct AllowList: Equatable, Sendable {
 
     public var count: Int { entries.count }
 
+    /// The entries of both.
+    public func union(_ other: AllowList) -> AllowList {
+        var joined = self
+        joined.entries.formUnion(other.entries)
+        return joined
+    }
+
+    /// The entries that allow at least one of `diagnostics`.
+    public func covering(_ diagnostics: [Diagnostic]) -> AllowList {
+        var kept = self
+        kept.entries = entries.filter { entry in diagnostics.contains { covers(entry, $0) } }
+        return kept
+    }
+
     public func allows(_ diagnostic: Diagnostic) -> Bool {
         entries.contains { covers($0, diagnostic) }
     }

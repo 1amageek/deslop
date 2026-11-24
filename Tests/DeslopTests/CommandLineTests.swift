@@ -263,4 +263,30 @@ struct CommandLineTests {
         #expect(scoped.status == 0)
         #expect(!scoped.output.contains("now fixed"), "\(scoped.output)")
     }
+
+    @Test("a scoped update keeps the allowed entries of what it did not check")
+    func scopedUpdateKeepsTheRest() throws {
+        let scratch = try temporaryDirectory()
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        var tree = Tree()
+        let p = tree.child(of: Tree.root, kind: .package, name: "P")
+        let q = tree.child(of: Tree.root, kind: .package, name: "Q")
+        let model = Model(
+            language: Language(name: "swift", pathSeparator: "."),
+            tree: tree,
+            files: [
+                SourceFile(path: "Sources/P/p.swift", module: p, test: false, lines: 2_001),
+                SourceFile(path: "Sources/Q/q.swift", module: q, test: false, lines: 2_001),
+            ]
+        )
+        let path = scratch.appendingPathComponent("model.json")
+        try ModelCodec.encode(model).write(to: path)
+        let allow = scratch.appendingPathComponent("debt.allow")
+        try Data("long-file Sources/Q/q.swift\nlong-file Sources/Gone/gone.swift\n".utf8).write(to: allow)
+        let updated = try run(["check", "--model", path.path, "P", "--update-allow", allow.path], in: scratch)
+        #expect(updated.status == 0, "\(updated.error)")
+        let entries = try String(contentsOf: allow, encoding: .utf8).split(separator: "\n").filter { !$0.hasPrefix("#") }
+        #expect(entries == ["long-file Sources/P/p.swift", "long-file Sources/Q/q.swift"])
+        #expect(try run(["check", "--model", path.path, "--allow", allow.path], in: scratch).status == 0)
+    }
 }

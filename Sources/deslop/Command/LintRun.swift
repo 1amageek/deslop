@@ -29,9 +29,22 @@ struct LintRun {
         let linter = Linter()
         let all = linter.check(model, scope: scope)
         if let path = reporting.updateAllow {
-            let text = AllowList(diagnostics: all).text(tool: LintRun.tool)
-            try write(text, to: path)
-            return Outcome(standardError: "\(LintRun.tool): wrote \(all.count) entries to \(path)\n", clean: true)
+            var updated = AllowList(diagnostics: all)
+            // A scoped run judges only its scope: what the allowlist allows
+            // elsewhere, and is still reported there, stays.
+            if scope != nil, FileManager.default.fileExists(atPath: path) {
+                let text = try read(path)
+                let existing: AllowList
+                do {
+                    existing = try AllowList(parsing: text)
+                } catch {
+                    throw .failure("\(path):\(error)")
+                }
+                let elsewhere = linter.check(model).filter { !all.contains($0) }
+                updated = updated.union(existing.covering(elsewhere))
+            }
+            try write(updated.text(tool: LintRun.tool), to: path)
+            return Outcome(standardError: "\(LintRun.tool): wrote \(updated.count) entries to \(path)\n", clean: true)
         }
         var reported = all
         var fixed = 0
