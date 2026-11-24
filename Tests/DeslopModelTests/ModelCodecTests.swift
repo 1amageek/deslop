@@ -130,3 +130,94 @@ struct ModelCodecTests {
         }
     }
 }
+
+@Suite("Model contract invariants")
+struct ModelInvariantTests {
+    /// One package `P` with one module `m`, a file, and two functions.
+    private func base() -> Model {
+        var tree = Tree()
+        let package = tree.child(of: Tree.root, kind: .package, name: "P")
+        let module = tree.child(of: package, kind: .module, name: "m")
+        return Model(
+            language: Language(name: "swift", pathSeparator: "."),
+            tree: tree,
+            files: [SourceFile(path: "Sources/P/m/A.swift", module: module, test: false, lines: 1, rank: 2)],
+            items: [
+                Item(name: "f()", owner: module, file: FileID(0), kind: .function),
+                Item(name: "g()", owner: module, file: FileID(0), kind: .function),
+            ]
+        )
+    }
+
+    /// The JSON form of `base()`, edited by `edit`, decoded.
+    private func decodeEdited(_ edit: (inout [String: Any]) -> Void) throws -> Model {
+        let data = try ModelCodec.encode(base())
+        var object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        edit(&object)
+        return try ModelCodec.decode(try JSONSerialization.data(withJSONObject: object))
+    }
+
+    private func editNode(_ index: Int, _ key: String, _ value: Any) -> (inout [String: Any]) -> Void {
+        { object in
+            var nodes = object["nodes"] as? [[String: Any]] ?? []
+            nodes[index][key] = value
+            object["nodes"] = nodes
+        }
+    }
+
+    @Test("the root is the workspace, and no other node is one")
+    func nodeKinds() {
+        #expect(throws: ModelError.misplacedRoot(node: 0)) { try decodeEdited(editNode(0, "kind", "package")) }
+        #expect(throws: ModelError.misplacedRoot(node: 2)) { try decodeEdited(editNode(2, "kind", "workspace")) }
+    }
+
+    @Test("a module is inside a package")
+    func moduleInsidePackage() {
+        #expect(throws: ModelError.moduleOutsidePackage(node: 1)) { try decodeEdited(editNode(1, "kind", "module")) }
+    }
+
+    @Test("two children of one node do not share a kind and a name")
+    func uniqueSiblings() {
+        #expect(throws: ModelError.duplicateNode(node: 3)) {
+            try decodeEdited { object in
+                var nodes = object["nodes"] as? [[String: Any]] ?? []
+                nodes.append(["name": "m", "kind": "module", "parent": 1, "test": false])
+                object["nodes"] = nodes
+            }
+        }
+    }
+
+    @Test("the path separator is not empty")
+    func emptySeparator() {
+        var model = base()
+        model.language.pathSeparator = ""
+        #expect(throws: ModelError.emptyPathSeparator) { try ModelCodec.validate(model) }
+    }
+
+    @Test("a file has a non-empty relative path, zero or more lines, and a rank of 0 to 3")
+    func fileValues() {
+        let changes: [(inout SourceFile) -> Void] = [
+            { $0.lines = -1 },
+            { $0.rank = 9 },
+            { $0.path = "/abs/A.swift" },
+            { $0.path = "" },
+        ]
+        for change in changes {
+            var model = base()
+            change(&model.files[0])
+            #expect(throws: ModelError.invalidFile(file: 0)) { try ModelCodec.validate(model) }
+        }
+    }
+
+    @Test("a function has at most one wrapper entry")
+    func duplicateWrapper() {
+        #expect(throws: ModelError.duplicateWrapper(function: 0)) {
+            try decodeEdited { object in
+                object["wrappers"] = [
+                    ["function": 0, "forwarder": ["target": 1, "fields": [Int]()]],
+                    ["function": 0, "accessor": ["lent": [Int](), "copied": [Int](), "toRead": true]],
+                ]
+            }
+        }
+    }
+}

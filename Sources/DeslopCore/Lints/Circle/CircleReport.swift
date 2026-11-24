@@ -1,10 +1,14 @@
 /// What is reported of a circle: where its cheapest tie is, a note for each
 /// tie, and a picture of the shortest circle through the cheapest.
 struct CircleReport {
-    /// A tie between two members, by their names: the user's, then the used's.
+    /// A tie between two members: the user's and the used's names, as
+    /// reports write them, and identities, which tell apart members that
+    /// share a name, such as overloads.
     struct Named {
         let user: String
         let used: String
+        let userIdentity: Int
+        let usedIdentity: Int
         let tie: Tie
     }
 
@@ -24,7 +28,9 @@ struct CircleReport {
         let ties = unsorted.sorted { a, b in
             if a.tie.cost != b.tie.cost { return a.tie.cost < b.tie.cost }
             if a.user != b.user { return Text.precedes(a.user, b.user) }
-            return Text.precedes(a.used, b.used)
+            if a.used != b.used { return Text.precedes(a.used, b.used) }
+            if a.userIdentity != b.userIdentity { return a.userIdentity < b.userIdentity }
+            return a.usedIdentity < b.usedIdentity
         }
         var notes = ties.prefix(Text.heldInMind).map {
             $0.tie.note(context, verb: verb, user: $0.user, used: $0.used)
@@ -32,7 +38,7 @@ struct CircleReport {
         if ties.count > Text.heldInMind {
             notes.append("and \(Text.counted(ties.count - Text.heldInMind, "more tie"))")
         }
-        let circle = CircleReport.shortestCircle(ties.map { ($0.user, $0.used) })
+        let circle = CircleReport.shortestCircle(ties.map { ($0.userIdentity, $0.usedIdentity) })
         let steps = circle.map { ties[$0].tie.step(context, member: ties[$0].user) }
         let leftOut = [
             (members - circle.count, "more \(noun)"),
@@ -46,13 +52,13 @@ struct CircleReport {
         self.picture = .circle(steps: steps, rest: rest)
     }
 
-    /// The shortest circle through the first of `ties`, each by the names of
-    /// the two it ties: the indexes of the ties it takes, in order, the first
+    /// The shortest circle through the first of `ties`, each by the
+    /// identities of the two it ties: the indexes of the ties it takes, in order, the first
     /// first. Of two as short, it takes the cheaper ties, which come first.
-    static func shortestCircle(_ ties: [(user: String, used: String)]) -> [Int] {
+    static func shortestCircle<Member: Hashable>(_ ties: [(user: Member, used: Member)]) -> [Int] {
         let (start, end) = ties[0]
         // By member, the tie it was first reached by, going out from `end`.
-        var reached: [String: Reached] = [end: .origin]
+        var reached: [Member: Reached] = [end: .origin]
         var queue = [end]
         var head = 0
         while head < queue.count {

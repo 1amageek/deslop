@@ -93,3 +93,25 @@ struct TangleTests {
         #expect(notes[3].hasSuffix("; also at src/writer.rs:2:1"), "\(notes[3])")
     }
 }
+
+@Suite("tangle of overloads")
+struct TangleOverloadTests {
+    @Test("two things of one name are two members of the circle drawn")
+    func overloads() {
+        var sample = Sample()
+        let (a, b) = (sample.module("a"), sample.module("b"))
+        let first = sample.item(a, "f", .function)
+        let g = sample.item(b, "g", .function)
+        let second = sample.item(a, "f", .function)
+        sample.refer(first, g)
+        sample.refer(g, second)
+        sample.refer(second, first)
+        let diagnostics = TangleRule().check(sample.context())
+        guard case .circle(let steps, _) = diagnostics.first?.picture else {
+            Issue.record("a tangle draws a circle")
+            return
+        }
+        #expect(steps.count == 3)
+        #expect(Set(steps.map(\.member)) == ["p::a::f", "p::b::g"])
+    }
+}

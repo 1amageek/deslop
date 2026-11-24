@@ -44,7 +44,10 @@ public struct TangleRule: LintRule {
     private func diagnostic(_ context: LintContext, members: [ThingID], written: Written) -> Diagnostic {
         let names = Text.sorted(members.map { Text.fullName($0, context) })
         let ties = written.ties.sorted.map {
-            CircleReport.Named(user: Text.fullName($0.key.user, context), used: Text.fullName($0.key.used, context), tie: $0.tie)
+            CircleReport.Named(
+                user: Text.fullName($0.key.user, context), used: Text.fullName($0.key.used, context),
+                userIdentity: $0.key.user.index, usedIdentity: $0.key.used.index, tie: $0.tie
+            )
         }
         let report = CircleReport(context, verb: "knows", noun: "thing", members: members.count, ties: ties)
         var notes = ["members: \(Text.listed(names))"]

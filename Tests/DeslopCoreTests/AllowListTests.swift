@@ -47,3 +47,29 @@ struct AllowListTests {
         #expect(try AllowList(parsing: text) == AllowList(diagnostics: diagnostics))
     }
 }
+
+@Suite("allowlist reading")
+struct AllowListReadingTests {
+    private func diagnostic(_ lint: Lint, _ key: String) -> Diagnostic {
+        Diagnostic(lint: lint, key: key, message: "", location: nil, notes: [], picture: .circle(steps: [], rest: nil))
+    }
+
+    @Test("CRLF line breaks split entries, and an invalid one is still refused")
+    func crlf() throws {
+        let allow = try AllowList(parsing: "# header\r\ntangle a.X,a.Y\r\nfield-leak a.T.x\r\n")
+        #expect(allow.count == 2)
+        #expect(allow.allows(diagnostic(.fieldLeak, "a.T.x")))
+        #expect(throws: AllowListError.invalidEntry(line: 2)) {
+            try AllowList(parsing: "tangle a.X,a.Y\r\nbogus-lint x\r\n")
+        }
+    }
+
+    @Test("an operator's lone angle bracket splits like any other character")
+    func operatorMember() throws {
+        let allow = try AllowList(parsing: "tangle P.a.<(_:_:),P.b.f,P.b.g\n")
+        #expect(allow.allows(diagnostic(.tangle, "P.a.<(_:_:),P.b.f")))
+        #expect(!allow.allows(diagnostic(.tangle, "P.a.<(_:_:),P.c.h")))
+        #expect(AllowList.members("P.a.>(_:_:),P.b.f") == ["P.a.>(_:_:)", "P.b.f"])
+        #expect(AllowList.members("a::<(A, B) as T>::run,a::Y") == ["a::<(A, B) as T>::run", "a::Y"])
+    }
+}

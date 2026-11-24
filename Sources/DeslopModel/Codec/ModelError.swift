@@ -16,6 +16,16 @@ public enum ModelError: Error, Equatable, Sendable, CustomStringConvertible {
     case forwarderCycle(function: Int)
     /// A line number below 1.
     case invalidLine(reference: Int, line: Int)
+    /// A module whose parent is no package or module.
+    case moduleOutsidePackage(node: Int)
+    /// A node with the same parent, kind and name as an earlier one.
+    case duplicateNode(node: Int)
+    /// The language's path separator is empty, so names would run together.
+    case emptyPathSeparator
+    /// A file whose path is empty or absolute, whose lines are negative, or whose rank is not 0 to 3.
+    case invalidFile(file: Int)
+    /// A function with more than one wrapper entry.
+    case duplicateWrapper(function: Int)
 
     public var description: String {
         switch self {
@@ -35,6 +45,16 @@ public enum ModelError: Error, Equatable, Sendable, CustomStringConvertible {
             "wrapper \(function): its chain of forwarders loops"
         case .invalidLine(let reference, let line):
             "reference \(reference): line \(line) is below 1"
+        case .moduleOutsidePackage(let node):
+            "node \(node): a module is inside a package or a module"
+        case .duplicateNode(let node):
+            "node \(node): its parent already has a child of its kind and name"
+        case .emptyPathSeparator:
+            "the language's path separator is empty"
+        case .invalidFile(let file):
+            "file \(file): a path is relative and not empty, lines are 0 or more, and a rank is 0 to 3"
+        case .duplicateWrapper(let function):
+            "wrapper \(function): a function has one wrapper entry at most"
         }
     }
 }

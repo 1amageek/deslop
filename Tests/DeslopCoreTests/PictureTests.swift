@@ -82,3 +82,13 @@ struct PictureTests {
         ])
     }
 }
+
+@Suite("pictures at their limits")
+struct PictureLimitTests {
+    @Test("a bar of the largest length is drawn, not trapped")
+    func largestLength() {
+        let lines = PictureDrawer(paint: Paint(colored: false)).draw(.bar(label: "lines", length: Int.max, most: 2_000))
+        #expect(lines.count == 2)
+        #expect(lines[1].hasSuffix("⋯ \(Int.max)"))
+    }
+}

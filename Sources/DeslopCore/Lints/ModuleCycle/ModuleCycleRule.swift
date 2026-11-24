@@ -66,7 +66,12 @@ public struct ModuleCycleRule: LintRule {
         let keys = Text.sorted(members.map(context.hierarchy.display))
         let inside = ties.sorted
             .filter { members.contains($0.key.user) && members.contains($0.key.used) }
-            .map { CircleReport.Named(user: name($0.key.user), used: name($0.key.used), tie: $0.tie) }
+            .map {
+                CircleReport.Named(
+                    user: name($0.key.user), used: name($0.key.used),
+                    userIdentity: $0.key.user.index, usedIdentity: $0.key.used.index, tie: $0.tie
+                )
+            }
         let report = CircleReport(context, verb: "uses", noun: "module", members: members.count, ties: inside)
         return Diagnostic(
             lint: .moduleCycle,

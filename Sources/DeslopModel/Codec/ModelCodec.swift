@@ -39,6 +39,7 @@ public enum ModelCodec {
         try validateNodes(document.nodes)
         var wrappers: [ItemID: Wrapper] = [:]
         for (index, entry) in document.wrappers.enumerated() {
+            guard wrappers[entry.function] == nil else { throw .duplicateWrapper(function: entry.function.index) }
             wrappers[entry.function] = try wrapper(entry, index: index)
         }
         let model = Model(
@@ -56,6 +57,7 @@ public enum ModelCodec {
     /// Checks every invariant the lints rely on, for a model built in memory.
     public static func validate(_ model: Model) throws(ModelError) {
         try validateNodes(model.tree.nodes)
+        guard !model.language.pathSeparator.isEmpty else { throw .emptyPathSeparator }
         let nodes = model.tree.count
         let files = model.files.count
         let items = model.items.count
@@ -66,6 +68,9 @@ public enum ModelCodec {
         }
         for (index, file) in model.files.enumerated() {
             try check(file.module.index, below: nodes, "file", index, "module")
+            guard !file.path.isEmpty, !file.path.hasPrefix("/"), file.lines >= 0, (0...3).contains(file.rank) else {
+                throw .invalidFile(file: index)
+            }
         }
         for (index, item) in model.items.enumerated() {
             try check(item.owner.index, below: nodes, "item", index, "owner")
@@ -109,14 +114,30 @@ public enum ModelCodec {
         }
     }
 
+    /// The tree's invariants: the first node is the workspace and the only
+    /// one; each other node's parent precedes it; a package is inside the
+    /// workspace or a package, a module inside a package or a module; and no
+    /// two children of one node share a kind and a name.
     private static func validateNodes(_ nodes: [Node]) throws(ModelError) {
-        guard let first = nodes.first, first.parent == nil, first.kind != .module else {
+        guard let first = nodes.first, first.parent == nil, first.kind == .workspace else {
             throw .misplacedRoot(node: 0)
         }
+        struct Sibling: Hashable {
+            let parent: Int
+            let kind: NodeKind
+            let name: String
+        }
+        var siblings: Set<Sibling> = []
         for (index, node) in nodes.enumerated().dropFirst() {
-            guard let parent = node.parent else { throw .misplacedRoot(node: index) }
+            guard let parent = node.parent, node.kind != .workspace else { throw .misplacedRoot(node: index) }
             guard parent.index >= 0, parent.index < index else {
                 throw .parentAfterChild(node: index, parent: parent.index)
+            }
+            if node.kind == .module, nodes[parent.index].kind == .workspace {
+                throw .moduleOutsidePackage(node: index)
+            }
+            guard siblings.insert(Sibling(parent: parent.index, kind: node.kind, name: node.name)).inserted else {
+                throw .duplicateNode(node: index)
             }
         }
     }

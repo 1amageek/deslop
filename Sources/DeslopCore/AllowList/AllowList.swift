@@ -14,7 +14,8 @@ public struct AllowList: Equatable, Sendable {
 
     public init(parsing text: String) throws(AllowListError) {
         var entries: Set<Entry> = []
-        for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        // `\r\n` is one `Character`, and a line break of its own.
+        for (index, line) in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
             let trimmed = line.trimmingWhitespace()
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             guard let space = trimmed.firstIndex(of: " "),
@@ -65,23 +66,33 @@ public struct AllowList: Equatable, Sendable {
     }
 
     /// The members a circle's key lists. A member's own commas are inside
-    /// brackets, as in `<(A, B) as Trait>::run`, and split nothing.
+    /// brackets, as in `<(A, B) as Trait>::run`, and split nothing. A bracket
+    /// that is never closed or never opened, as in the operator `<(_:_:)`,
+    /// is a character of a name and brackets nothing.
     static func members(_ key: String) -> [String] {
+        let characters = Array(key)
+        let pairs: [Character: Character] = ["<": ">", "(": ")", "[": "]"]
+        var open: [(character: Character, at: Int)] = []
+        var matched: Set<Int> = []
+        for (at, character) in characters.enumerated() {
+            if pairs[character] != nil {
+                open.append((character, at))
+            } else if let opening = open.lastIndex(where: { pairs[$0.character] == character }) {
+                matched.insert(open[opening].at)
+                matched.insert(at)
+                open.removeSubrange(opening...)
+            }
+        }
         var members: [String] = []
         var depth = 0
         var current = ""
-        for character in key {
-            switch character {
-            case "<", "(", "[":
-                depth += 1
-            case ">", ")", "]":
-                depth = max(depth - 1, 0)
-            case "," where depth == 0:
+        for (at, character) in characters.enumerated() {
+            if matched.contains(at) {
+                depth += pairs[character] != nil ? 1 : -1
+            } else if character == ",", depth == 0 {
                 members.append(current)
                 current = ""
                 continue
-            default:
-                break
             }
             current.append(character)
         }

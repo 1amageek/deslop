@@ -119,8 +119,10 @@ public struct PictureDrawer: Sendable {
         return lines
     }
 
+    /// `value / divisor`, rounded up, for any `value` of zero or more: it
+    /// never adds before dividing, so no length overflows it.
     private func ceilingDivision(_ value: Int, _ divisor: Int) -> Int {
-        (value + divisor - 1) / divisor
+        value / divisor + (value % divisor == 0 ? 0 : 1)
     }
 
     private func padded(_ text: String, _ width: Int) -> String {
