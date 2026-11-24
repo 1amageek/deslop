@@ -8,7 +8,7 @@ import Foundation
 @main
 struct Deslop {
     /// The version this source is released as: the tag of its release.
-    static let version = "1.1.0"
+    static let version = "1.0.1"
 
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())

@@ -64,16 +64,16 @@ need macOS and Xcode.
 With [Mint](https://github.com/yonaskolb/Mint):
 
 ```bash
-mint install 1amageek/deslop@1.0.0   # links ~/.mint/bin/deslop
+mint install 1amageek/deslop@1.0.1   # links ~/.mint/bin/deslop
 ```
 
-Or, in a `Mintfile`, add the line `1amageek/deslop@1.0.0` and run
+Or, in a `Mintfile`, add the line `1amageek/deslop@1.0.1` and run
 `mint run deslop`.
 
 From source:
 
 ```bash
-git clone --branch 1.0.0 --depth 1 https://github.com/1amageek/deslop.git
+git clone --branch 1.0.1 --depth 1 https://github.com/1amageek/deslop.git
 cd deslop
 swift build -c release --product deslop
 cp .build/release/deslop ~/.local/bin/   # or anywhere on your PATH
@@ -102,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          git clone --branch 1.0.0 --depth 1 https://github.com/1amageek/deslop.git /tmp/deslop
+          git clone --branch 1.0.1 --depth 1 https://github.com/1amageek/deslop.git /tmp/deslop
           swift build -c release --product deslop --package-path /tmp/deslop
           /tmp/deslop/.build/release/deslop --allow .deslop.allow
 ```
