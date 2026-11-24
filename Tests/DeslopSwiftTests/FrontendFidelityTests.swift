@@ -376,4 +376,41 @@ struct FrontendFidelityTests {
         defer { clean(package) }
         #expect(try keys(package) == ["field-leak Lib.Model.Board.cells"])
     }
+
+    @Test("a view's own `$property` is its own use, wherever the index places it in the token")
+    func ownProjectedValue() throws {
+        let package = try TemporaryPackage(sources: [
+            "Screens/Parent.swift": """
+                import SwiftUI
+
+                struct Parent: View {
+                    @State private var on = false
+                    @State private var count = 0
+                    var body: some View {
+                        VStack {
+                            Child(on: $on)
+                            Text("\\(count)")
+                        }
+                    }
+                }
+                """,
+            "Screens/Child/Child.swift": """
+                import SwiftUI
+
+                struct Child: View {
+                    @Binding var on: Bool
+                    @State private var label = ""
+                    var body: some View {
+                        Toggle(label, isOn: $on)
+                    }
+                }
+                """,
+        ])
+        defer { clean(package) }
+        let model = try PackageFrontend(packageRoot: package.directory).model()
+        let projected = model.references.filter { model.item($0.item).name == "Parent.on" || model.item($0.item).name == "Child.on" }
+        #expect(!projected.isEmpty)
+        #expect(projected.allSatisfy { $0.holder != nil }, "\(projected)")
+        #expect(Linter().check(model).filter { $0.lint == .fieldLeak }.isEmpty)
+    }
 }

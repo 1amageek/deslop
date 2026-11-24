@@ -48,9 +48,19 @@ final class SourceSyntax {
         return SourcePosition(line: location.line, column: column)
     }
 
+    /// The token the index names at `position`: the one that starts there,
+    /// or a projected value's, `$name`, which the index places after its `$`.
+    private func token(at position: SourcePosition) -> TokenSyntax? {
+        if let token = tokens[position] { return token }
+        guard position.column > 1,
+              let projected = tokens[SourcePosition(line: position.line, column: position.column - 1)],
+              projected.text.hasPrefix("$") else { return nil }
+        return projected
+    }
+
     /// The names of the declarations around `position`, innermost first.
     func holders(of position: SourcePosition) -> [SourcePosition] {
-        guard let token = tokens[position] else { return [] }
+        guard let token = token(at: position) else { return [] }
         let offset = token.positionAfterSkippingLeadingTrivia.utf8Offset
         return holders
             .filter { $0.range.contains(offset) }
@@ -63,7 +73,7 @@ final class SourceSyntax {
     /// field, through which the place goes on: `queue.inner.items.count`
     /// reaches into `inner` as it does into `items`.
     func access(at position: SourcePosition, facts: NameFacts) -> Access {
-        guard tokens[position] != nil else { return .reach }
+        guard token(at: position) != nil else { return .reach }
         // A name that is no expression, such as an argument label of a
         // memberwise initializer, gives or takes the value whole.
         guard let place = place(at: position) else { return .copy }
@@ -87,7 +97,7 @@ final class SourceSyntax {
     /// The expression that is the place named at `position`: `queue.head`
     /// for `head`, or `head` alone.
     private func place(at position: SourcePosition) -> Syntax? {
-        guard let token = tokens[position], let reference = token.parent?.as(DeclReferenceExprSyntax.self) else {
+        guard let token = token(at: position), let reference = token.parent?.as(DeclReferenceExprSyntax.self) else {
             return nil
         }
         if let member = reference.parent?.as(MemberAccessExprSyntax.self), member.declName.id == reference.id {
@@ -236,9 +246,11 @@ final class SourceSyntax {
     /// borrows: they hand out nothing of how the value is kept.
     static let borrows: Set<String> = ["utf8", "utf16", "unicodeScalars"]
 
-    /// Whether a place is reached through a projected value: its path of
-    /// members starts at a `$` name, as `$model.settings.name` does.
+    /// Whether a place is reached through a projected value: it is a `$`
+    /// name, as `$on` is, or its path of members starts at one, as
+    /// `$model.settings.name` does.
     private static func isProjected(_ place: Syntax) -> Bool {
+        if place.as(DeclReferenceExprSyntax.self)?.baseName.text.hasPrefix("$") == true { return true }
         var at = place.as(MemberAccessExprSyntax.self)?.base
         while let member = at?.as(MemberAccessExprSyntax.self) { at = member.base }
         return at?.as(DeclReferenceExprSyntax.self)?.baseName.text.hasPrefix("$") == true
