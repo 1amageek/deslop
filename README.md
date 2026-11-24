@@ -1,4 +1,4 @@
-# swift-deslop
+# deslop
 
 A CLI that prevents common structural mistakes: **deep** modules, **narrow**
 interfaces, after *A Philosophy of Software Design*. It detects what a general
@@ -48,9 +48,24 @@ deslop        command line
 - Errors flagged by `deslop` must be fixed from first principles, not by mechanical moves that hide them.
 ```
 
-## Build and test
+## Install
+
+Requires macOS 15 or later and a Swift toolchain; tested with Swift 6.4.1.
 
 ```bash
+git clone https://github.com/1amageek/deslop.git
+cd deslop
 swift build -c release --product deslop
+cp .build/release/deslop /usr/local/bin/   # or anywhere on your PATH
+```
+
+## Test
+
+```bash
 swift test
 ```
+
+## License
+
+MIT. The lints' definitions began as those of deslop-please, also MIT; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

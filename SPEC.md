@@ -1,4 +1,4 @@
-# swift-deslop
+# deslop
 
 A CLI that prevents common structural mistakes in code, by the rule **deep
 modules, narrow interfaces**. Its lints run on a language-neutral model of a

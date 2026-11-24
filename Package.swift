@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "swift-deslop",
+    name: "deslop",
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "deslop", targets: ["deslop"]),
