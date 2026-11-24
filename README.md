@@ -1,9 +1,12 @@
 # swift-deslop
 
-An opinionated architectural linter for Swift: **deep** modules, **narrow**
-interfaces. It follows [deslop-please](https://github.com/deterministic-machines/deslop-please)
-and *A Philosophy of Software Design*, and runs its six lints on a
-language-neutral model, so any language's frontend can use them.
+A CLI that prevents common structural mistakes: **deep** modules, **narrow**
+interfaces, after *A Philosophy of Software Design*. It detects what a general
+linter cannot, mistakes seen only across files through what code refers to,
+and leaves what one file's syntax shows to linters such as swift-format. Its
+lints run on a language-neutral model, so any language's frontend can use them.
+Their definitions began as those of
+[deslop-please](https://github.com/deterministic-machines/deslop-please).
 
 ```bash
 deslop                                # lint the Swift package in the current directory

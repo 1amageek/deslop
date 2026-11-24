@@ -1,17 +1,18 @@
 # swift-deslop
 
-An architectural linter that enforces **deep modules, narrow interfaces**, after
-[deslop-please](https://github.com/deterministic-machines/deslop-please). The
-lints run on a language-neutral model of a codebase; a frontend per language
-builds that model. This package ships the lints, the model contract, and a
-Swift frontend.
+A CLI that prevents common structural mistakes in code, by the rule **deep
+modules, narrow interfaces**. Its lints run on a language-neutral model of a
+codebase; a frontend per language builds that model. This package ships the
+lints, the model contract, and a Swift frontend. The lints' definitions began
+as those of [deslop-please](https://github.com/deterministic-machines/deslop-please)
+0.1.3; this project owns them now and is not compatible with it.
 
 ## 1. Requirements
 
 | ID | Requirement |
 |---|---|
-| R1 | The lints read only the language-neutral model (§2). No lint knows a language, a file extension, or a toolchain. |
-| R2 | The six lints (§3) report the same diagnostics, keys, notes and pictures that deslop-please 0.1.3 reports for the same model. |
+| R1 | deslop detects what a general linter cannot: mistakes seen only across files, through what code refers to. What one file's syntax shows (naming, `try?`, formatting) is a general linter's, such as swift-format's, and no lint here repeats it. |
+| R2 | The lints read only the language-neutral model (§2). No lint knows a language, a file extension, or a toolchain. Their definitions are §3 and the tests that state them. |
 | R3 | The model has a versioned JSON form. Any frontend, in any language, can produce it; `deslop check --model <file>` lints it. |
 | R4 | The Swift frontend (§4) builds the model of a SwiftPM package from its package description, the compiler's IndexStore and the source text. |
 | R5 | The CLI (§5) works as a lint: exit 0 when clean, 1 when it reports, 2 when it cannot run. An allowlist suppresses existing debt; new diagnostics still fail. |
@@ -33,14 +34,16 @@ The model is the single source of truth for the lints. JSON form: `format: "desl
 Invariants, checked when a model is decoded (violations are `ModelError`):
 
 1. Every index refers to an existing node, file or item.
-2. Exactly one root, the first node, of kind `workspace`; every other node's parent precedes it.
-3. Item parent chains end; no chain of forwarders loops.
-4. `version` is 1 and `format` is `deslop-model`.
+2. Exactly one root, the first node, of kind `workspace`; no other node is a workspace, and every other node's parent precedes it.
+3. A package is inside the workspace or a package; a module is inside a package or a module. No two children of one node share a kind and a name.
+4. Item parent chains end; no chain of forwarders loops; a function has at most one wrapper entry.
+5. `pathSeparator` is not empty. A file's path is relative and not empty, its `lines` 0 or more, its `rank` 0 to 3; a reference's line is 1 or more.
+6. `version` is 1 and `format` is `deslop-model`.
 
 ## 3. Lint contracts (`DeslopCore`)
 
 Constants: `HELD_IN_MIND = 7`, `MOST_MEMBERS = 15`, `MOST_LINES = 2000`, `BREAK_EVEN = 1`.
-Definitions follow deslop-please 0.1.3 (`src/graph`, `src/lint`):
+Definitions:
 
 - **Thing**: the item at the top of a parent chain when it is a non-test `type`, `function` or `constant`. Its home is that item's owner.
 - **Use**: a non-test reference not held by a wrapper, seen through wrappers (a forwarder's chain to its target, plus reads of the fields it calls on; an accessor's fields, lent ones read only where the reference only reads).
@@ -65,7 +68,7 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | module node | a directory below a target's root (a component directory) |
 | file | each `.swift` source of each Swift target, as `swift package describe` lists it; files of test and plugin targets count for layout only, with no items or references |
 | `type` | struct, class, actor, enum, protocol, typealias, associated type; a nested type is named after its outer type (`Outer.Inner`) but is a thing of its own, as a Rust type in a module is |
-| `field` | a stored instance property (with or without observers or a property wrapper) |
+| `field` | a stored instance property (with or without observers or a property wrapper), each name of a tuple pattern included; its type is the one written, or the one its initial value gives: a literal's (`0`, `-1`, `"a"`), or the type it constructs (`Inner()`, `[Int]()`) when the index names a type there |
 | `function` | function, method, initializer, deinitializer, subscript, computed property |
 | `constant` | a global variable, or a stored static property |
 | `variant` | an enum case |
@@ -77,9 +80,14 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | `copies` (field, or lent accessor) | write role → no; subscripted, `&`-passed or assigned → no; `utf8`/`utf16`/`unicodeScalars` reached on it (a borrow, as Rust's `as_bytes`) → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
 | forwarder | a non-witness function whose body is one call to another workspace function, on a parameter, `self` or a field path of `self`, passing exactly the function's own parameters |
 | accessor | a non-witness instance computed property, subscript or method whose body names only fields of its own type, computes nothing, and whose signature writes each field's declared type; fields are lent, `toRead` unless it is a method that writes. An initializer of that shape, which only assigns parameters to fields, is an accessor whose fields are copied: like a Rust struct literal it adds nothing |
-| `rank` / `declares` | `main.swift` or `<Target>.swift` at a target root: 0; `<Dir>.swift` in `<Dir>/`: 1 |
+| `rank` / `declares` | `main.swift` or `<Target>.swift` at a target root: 0; `<Dir>.swift` in `<Dir>/`: 1; names compare in any case |
 
-The index comes from `swift build --enable-index-store` in a scratch path of its own (`.build/deslop`), so the package's own builds are untouched; libIndexStore is loaded from the toolchain of the `swift` that builds (`DESLOP_LIBINDEXSTORE` names another). Only the latest unit of each indexed source file is read, and an indexed source with no unit is an error. A reference names what the active build configuration compiles: code under an inactive `#if` is not seen.
+The index comes from `swift build --enable-index-store` in a scratch path of its own (`.build/deslop`), so the package's own builds are untouched; libIndexStore is loaded from the toolchain of the `swift` that builds (`DESLOP_LIBINDEXSTORE` names another). Only the latest unit of each indexed source file is read. An indexed source with no unit, or written after its unit was (an index older than the text, as `--skip-build` can meet), is an error. A file that starts with a byte order mark has its first line's columns counted as the index counts them. A reference names what the active build configuration compiles: code under an inactive `#if` is not seen.
+
+Known limits, each marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided:
+
+- A member written in a type's body that witnesses a requirement of a protocol the type conforms to in an empty extension is not marked `implementsInterface`.
+- A key path kept in a value and written through later is taken for a read of the field it names.
 
 ## 5. CLI (`deslop`)
 
@@ -89,16 +97,16 @@ deslop model [--package-path <dir>] [--skip-build] [--output <path>]
 deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
 ```
 
-Output follows deslop-please's rustc-style report; the last line is `deslop: ok` or `deslop: N errors, well done!`. Color: `DESLOP_COLOR=always|never`, then `NO_COLOR`, then whether stdout is a terminal.
+Output is a compiler-style report; the last line is `deslop: ok` or `deslop: N errors, well done!`. Color: `DESLOP_COLOR=always|never`, then `NO_COLOR`, then whether stdout is a terminal.
 
 ## 6. Acceptance criteria
 
 | ID | Criterion | Evidence |
 |---|---|---|
-| A1 | The lints reproduce deslop-please's expectations on deslop-please's own model-level tests. | `DeslopCoreTests`, ported from deslop-please's unit tests with Rust-flavored models. |
+| A1 | Each lint reports what §3 defines, and only that, on models of every shape §2 allows; a picture of any length is drawn. | `DeslopCoreTests`, on Rust-flavored models (separator `::`), which also shows no lint knows Swift |
 | A2 | The JSON model round-trips and invalid models are rejected with the broken invariant named. | `DeslopModelTests` |
-| A3 | The Swift frontend reports Swift ports of deslop-please's fixtures: a field leak (and its getter variant), its fix, a module cycle and its fix, a tangle across modules, a shallow module, small types that are not shallow, a clean package, and test code left out. | `DeslopSwiftTests` end-to-end on `Fixtures/` |
-| A4 | The CLI's exit codes, allowlist and `check --model` behave as §5 says. | `DeslopTests` |
+| A3 | The Swift frontend reports a field leak (and its getter variant), its fix, a module cycle and its fix, a tangle across modules, a shallow module, a clean package, and test code left out; and types inferred from initial values, tuple patterns, files with a byte order mark, and a stale index as §4 says. | `DeslopSwiftTests` end-to-end on `Fixtures/` and on packages the tests write |
+| A4 | The CLI's exit codes, allowlist (CRLF included, fixed entries counted across scopes) and `check --model` behave as §5 says. | `DeslopTests`, `DeslopCoreTests` |
 | A5 | `deslop` runs clean on its own source with no allowlist. | running it on this package |
 
 No contract here is a state machine or concurrent protocol: the lints are pure functions of the model, and the CLI runs one sequential pipeline. Their contracts are checked by the tests above rather than by TLA+ or Lean.
