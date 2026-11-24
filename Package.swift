@@ -5,7 +5,7 @@ let package = Package(
     name: "swift-deslop",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "swift-deslop", targets: ["swift-deslop"]),
+        .executable(name: "deslop", targets: ["deslop"]),
         .library(name: "DeslopModel", targets: ["DeslopModel"]),
         .library(name: "DeslopCore", targets: ["DeslopCore"]),
         .library(name: "DeslopSwift", targets: ["DeslopSwift"]),
@@ -28,7 +28,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "swift-deslop",
+            name: "deslop",
             dependencies: ["DeslopModel", "DeslopCore", "DeslopSwift"]
         ),
         .testTarget(name: "DeslopModelTests", dependencies: ["DeslopModel"]),
@@ -43,7 +43,7 @@ let package = Package(
         .testTarget(
             name: "DeslopTests",
             dependencies: [
-                "swift-deslop", "DeslopModel",
+                "deslop", "DeslopModel",
                 .product(name: "TestHeartbeat", package: "swift-testing-heartbeat"),
             ]
         ),

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A SwiftPM package, as `swift package describe --type json` describes it.
-struct SwiftPackage: Sendable, Decodable {
+struct PackageDescription: Sendable, Decodable {
     struct Target: Sendable, Decodable {
         let name: String
         /// `library`, `executable`, `test`, `macro`, `plugin`, ...
@@ -28,10 +28,10 @@ struct SwiftPackage: Sendable, Decodable {
     let targets: [Target]
 
     /// The package whose root is `directory`.
-    static func describe(_ directory: URL, runner: CommandRunner) throws(SwiftFrontendError) -> SwiftPackage {
+    static func describe(_ directory: URL, runner: CommandRunner) throws(FrontendError) -> PackageDescription {
         let data = try runner.run(["swift", "package", "--package-path", directory.path, "describe", "--type", "json"])
         do {
-            return try JSONDecoder().decode(SwiftPackage.self, from: data)
+            return try JSONDecoder().decode(PackageDescription.self, from: data)
         } catch {
             throw .packageDescriptionUnreadable(String(describing: error))
         }

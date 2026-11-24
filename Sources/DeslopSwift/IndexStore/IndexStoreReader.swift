@@ -14,7 +14,7 @@ struct IndexStoreReader {
     /// By each of `files` (absolute, symlinks resolved), its occurrences in
     /// the order the index keeps them. Of the units that compiled a file,
     /// the latest is read; a file no unit compiled is missing from the result.
-    func occurrences(of files: Set<String>) throws(SwiftFrontendError) -> [String: [IndexOccurrence]] {
+    func occurrences(of files: Set<String>) throws(FrontendError) -> [String: [IndexOccurrence]] {
         let handle = try library.openStore(at: store.path)
         defer { library.close(handle) }
         var latest: [String: (record: String, modified: IndexUnit.Time)] = [:]

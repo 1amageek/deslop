@@ -1,4 +1,4 @@
-// The subset of libIndexStore's C interface swift-deslop reads, declared as
+// The subset of libIndexStore's C interface deslop reads, declared as
 // function pointer types. The library itself is loaded at run time, from the
 // toolchain whose compiler wrote the index, so that the reader and the
 // writer of the index always match.

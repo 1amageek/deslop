@@ -2,14 +2,14 @@ import Foundation
 
 /// The `swift` on the path: what builds the package, writes its index, and
 /// ships the libIndexStore that reads that index.
-struct SwiftToolchain: Sendable {
+struct Toolchain: Sendable {
     let runner: CommandRunner
 
     /// libIndexStore of the toolchain whose compiler writes the index: next to
-    /// its runtime resources, `<toolchain>/usr/lib`. `SWIFT_DESLOP_LIBINDEXSTORE`
+    /// its runtime resources, `<toolchain>/usr/lib`. `DESLOP_LIBINDEXSTORE`
     /// names another.
-    func indexStoreLibrary() throws(SwiftFrontendError) -> URL {
-        if let override = ProcessInfo.processInfo.environment["SWIFT_DESLOP_LIBINDEXSTORE"], !override.isEmpty {
+    func indexStoreLibrary() throws(FrontendError) -> URL {
+        if let override = ProcessInfo.processInfo.environment["DESLOP_LIBINDEXSTORE"], !override.isEmpty {
             return URL(fileURLWithPath: override)
         }
         struct TargetInfo: Decodable {
@@ -34,7 +34,7 @@ struct SwiftToolchain: Sendable {
     }
 
     /// Builds the package at `root` in `scratch`, writing its index.
-    func buildIndex(root: URL, scratch: URL) throws(SwiftFrontendError) {
+    func buildIndex(root: URL, scratch: URL) throws(FrontendError) {
         let arguments = [
             "swift", "build",
             "--package-path", root.path,
@@ -53,7 +53,7 @@ struct SwiftToolchain: Sendable {
     /// `native` one to `<triple>/debug/index/store/` (linked from
     /// `debug/index/store/`); of those that exist, the most recently written
     /// is the build's.
-    func indexStore(in scratch: URL) throws(SwiftFrontendError) -> URL {
+    func indexStore(in scratch: URL) throws(FrontendError) -> URL {
         let manager = FileManager.default
         let triples: [URL]
         do {

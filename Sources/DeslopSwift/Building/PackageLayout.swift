@@ -19,7 +19,7 @@ struct PackageLayout {
     private(set) var tree = Tree()
     private(set) var entries: [Entry] = []
 
-    init(package: SwiftPackage) throws(SwiftFrontendError) {
+    init(package: PackageDescription) throws(FrontendError) {
         let root = URL(fileURLWithPath: package.path)
         let targets = package.targets.filter(\.isSwift).sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
         for target in targets {
@@ -78,7 +78,7 @@ struct PackageLayout {
     /// Where a reader starts: `main.swift` or `<Target>.swift` at a target's
     /// root is the target's root file; `<Dir>.swift` in `<Dir>/` declares
     /// its directory.
-    private static func rank(source: String, target: SwiftPackage.Target) -> (Int, String?) {
+    private static func rank(source: String, target: PackageDescription.Target) -> (Int, String?) {
         let parts = source.split(separator: "/").map(String.init)
         guard let name = parts.last else { return (2, nil) }
         if parts.count == 1, name == "main.swift" || name == "\(target.name).swift" {

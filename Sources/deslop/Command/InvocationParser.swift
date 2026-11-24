@@ -1,10 +1,10 @@
 /// Reads the command line.
 enum InvocationParser {
     static let usage = """
-        usage: swift-deslop [<target-or-module>] [--allow <path> | --update-allow <path>]
+        usage: deslop [<target-or-module>] [--allow <path> | --update-allow <path>]
                             [--package-path <dir>] [--skip-build]
-               swift-deslop model [--package-path <dir>] [--skip-build] [--output <path>]
-               swift-deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
+               deslop model [--package-path <dir>] [--skip-build] [--output <path>]
+               deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
 
         Runs architectural lints (module-cycle, tangle, field-leak, shallow-module,
         wide-directory, long-file) on a Swift package, or on the language-neutral

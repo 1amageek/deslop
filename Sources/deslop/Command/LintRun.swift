@@ -4,7 +4,7 @@ import Foundation
 
 /// Lints a model and reports as the command line asked.
 struct LintRun {
-    static let tool = "swift-deslop"
+    static let tool = "deslop"
 
     /// What the run printed, and whether it found nothing new.
     struct Outcome {

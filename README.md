@@ -6,12 +6,12 @@ and *A Philosophy of Software Design*, and runs its six lints on a
 language-neutral model, so any language's frontend can use them.
 
 ```bash
-swift-deslop                       # lint the Swift package in the current directory
-swift-deslop MyTarget.Store        # only what concerns one target or module
-swift-deslop --update-allow .swift-deslop.allow   # record existing debt
-swift-deslop --allow .swift-deslop.allow          # new errors still fail
-swift-deslop model --output model.json            # the package's model, as JSON
-swift-deslop check --model model.json             # lint any frontend's model
+deslop                                # lint the Swift package in the current directory
+deslop MyTarget.Store                 # only what concerns one target or module
+deslop --update-allow .deslop.allow   # record existing debt
+deslop --allow .deslop.allow          # new errors still fail
+deslop model --output model.json      # the package's model, as JSON
+deslop check --model model.json       # lint any frontend's model
 ```
 
 Exit status: `0` nothing reported, `1` reports, `2` cannot run.
@@ -35,19 +35,19 @@ and how Swift maps onto them.
 DeslopModel   language-neutral model and its JSON contract
 DeslopCore    graph, lints, allowlist, report         (reads DeslopModel only)
 DeslopSwift   Swift frontend: SwiftPM + IndexStore + swift-syntax → model
-swift-deslop  command line
+deslop        command line
 ```
 
 ## Add to your `AGENTS.md`
 
 ```markdown
-- Run `swift-deslop` to check for sloppy code structure.
-- Errors flagged by `swift-deslop` must be fixed from first principles, not by mechanical moves that hide them.
+- Run `deslop` to check for sloppy code structure.
+- Errors flagged by `deslop` must be fixed from first principles, not by mechanical moves that hide them.
 ```
 
 ## Build and test
 
 ```bash
-swift build -c release --product swift-deslop
+swift build -c release --product deslop
 swift test
 ```

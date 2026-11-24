@@ -15,7 +15,7 @@ struct Fixture {
     init(_ family: String, variant: String? = nil) throws {
         let manager = FileManager.default
         directory = manager.temporaryDirectory
-            .appendingPathComponent("swift-deslop-tests-\(UUID().uuidString)")
+            .appendingPathComponent("deslop-tests-\(UUID().uuidString)")
             .appendingPathComponent(family)
         try manager.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
         try manager.copyItem(at: Fixture.root.appendingPathComponent(family), to: directory)

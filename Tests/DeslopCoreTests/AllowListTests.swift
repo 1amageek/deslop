@@ -42,7 +42,7 @@ struct AllowListTests {
     @Test("the written allowlist reads back the same, sorted by lint and key")
     func roundTrip() throws {
         let diagnostics = [diagnostic(.fieldLeak, "b"), diagnostic(.moduleCycle, "z"), diagnostic(.fieldLeak, "a")]
-        let text = AllowList(diagnostics: diagnostics).text(tool: "swift-deslop")
+        let text = AllowList(diagnostics: diagnostics).text(tool: "deslop")
         #expect(text.hasSuffix("module-cycle z\nfield-leak a\nfield-leak b\n"))
         #expect(try AllowList(parsing: text) == AllowList(diagnostics: diagnostics))
     }

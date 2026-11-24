@@ -2,7 +2,7 @@ import DeslopModel
 import DeslopSwift
 import Foundation
 
-/// `swift-deslop`: an architectural linter for deep modules and narrow
+/// `deslop`: an architectural linter for deep modules and narrow
 /// interfaces. Exits 0 when it reports nothing, 1 when it reports, 2 when it
 /// cannot run.
 @main
@@ -72,7 +72,7 @@ struct Deslop {
         let root = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
             .standardizedFileURL
         do {
-            return try SwiftPackageFrontend(packageRoot: root, buildsIndex: buildsIndex).model()
+            return try PackageFrontend(packageRoot: root, buildsIndex: buildsIndex).model()
         } catch {
             throw .failure(error.description)
         }
@@ -84,11 +84,11 @@ struct Deslop {
         return outcome.clean
     }
 
-    /// `SWIFT_DESLOP_COLOR=always|never` decides, then `NO_COLOR`, then
+    /// `DESLOP_COLOR=always|never` decides, then `NO_COLOR`, then
     /// whether standard output is a terminal.
     private static func colored() -> Bool {
         let environment = ProcessInfo.processInfo.environment
-        switch environment["SWIFT_DESLOP_COLOR"] {
+        switch environment["DESLOP_COLOR"] {
         case "always": return true
         case "never": return false
         default: return (environment["NO_COLOR"] ?? "").isEmpty && isatty(STDOUT_FILENO) != 0

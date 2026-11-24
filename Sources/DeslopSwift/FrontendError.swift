@@ -1,7 +1,7 @@
 import DeslopModel
 
 /// Why the Swift frontend cannot build a model.
-public enum SwiftFrontendError: Error, Equatable, Sendable, CustomStringConvertible {
+public enum FrontendError: Error, Equatable, Sendable, CustomStringConvertible {
     /// A command could not be started, or it failed.
     case commandFailed(command: String, status: Int32, output: String)
     /// `swift package describe` printed something that is not a package description.

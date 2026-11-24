@@ -36,12 +36,12 @@ final class IndexStoreLibrary {
     private let symbolName: cis_symbol_get_string_f
     private let symbolUSR: cis_symbol_get_string_f
 
-    init(at url: URL) throws(SwiftFrontendError) {
+    init(at url: URL) throws(FrontendError) {
         guard let handle = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
             let reason = dlerror().map { String(cString: $0) } ?? "dlopen failed"
             throw .indexStoreLibraryUnavailable("\(url.path): \(reason)")
         }
-        func load<Function>(_ name: String, as type: Function.Type) throws(SwiftFrontendError) -> Function {
+        func load<Function>(_ name: String, as type: Function.Type) throws(FrontendError) -> Function {
             guard let symbol = dlsym(handle, name) else {
                 throw .indexStoreLibraryUnavailable("\(url.path) has no `\(name)`")
             }
@@ -88,7 +88,7 @@ final class IndexStoreLibrary {
     }
 
     /// The index store at `path`, open until `close(_:)`.
-    func openStore(at path: String) throws(SwiftFrontendError) -> cis_indexstore_t {
+    func openStore(at path: String) throws(FrontendError) -> cis_indexstore_t {
         var error: cis_error_t?
         guard let store = storeCreate(path, &error) else {
             throw .indexStoreUnreadable("\(path): \(consume(error))")
@@ -115,7 +115,7 @@ final class IndexStoreLibrary {
     }
 
     /// What the unit `name` of `store` says of itself and the records it depends on.
-    func unit(_ name: String, in store: cis_indexstore_t) throws(SwiftFrontendError) -> IndexUnit {
+    func unit(_ name: String, in store: cis_indexstore_t) throws(FrontendError) -> IndexUnit {
         var error: cis_error_t?
         guard let unit = unitReaderCreate(store, name, &error) else {
             throw .indexStoreUnreadable("unit \(name): \(consume(error))")
@@ -144,7 +144,7 @@ final class IndexStoreLibrary {
     }
 
     /// The occurrences the record `name` of `store` holds, in its order.
-    func occurrences(ofRecord name: String, in store: cis_indexstore_t) throws(SwiftFrontendError) -> [IndexOccurrence] {
+    func occurrences(ofRecord name: String, in store: cis_indexstore_t) throws(FrontendError) -> [IndexOccurrence] {
         var error: cis_error_t?
         guard let reader = recordReaderCreate(store, name, &error) else {
             throw .indexStoreUnreadable("record \(name): \(consume(error))")

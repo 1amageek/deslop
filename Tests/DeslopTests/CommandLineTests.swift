@@ -3,9 +3,9 @@ import Foundation
 import TestHeartbeat
 import Testing
 
-/// The `swift-deslop` executable, run as a lint is: its exit codes, its
+/// The `deslop` executable, run as a lint is: its exit codes, its
 /// report, its allowlist, and its check of a model any frontend wrote.
-@Suite("swift-deslop command line", .heartbeat, .timeLimit(.minutes(10)))
+@Suite("deslop command line", .heartbeat, .timeLimit(.minutes(10)))
 struct CommandLineTests {
     private final class BundleMarker {}
 
@@ -24,14 +24,14 @@ struct CommandLineTests {
     /// The executable the test bundle was built with: beside the bundle.
     private static let executable = Bundle(for: BundleMarker.self).bundleURL
         .deletingLastPathComponent()
-        .appendingPathComponent("swift-deslop")
+        .appendingPathComponent("deslop")
 
     private func run(_ arguments: [String], in directory: URL) throws -> Run {
         let process = Process()
         process.executableURL = CommandLineTests.executable
         process.arguments = arguments
         process.currentDirectoryURL = directory
-        process.environment = ProcessInfo.processInfo.environment.merging(["SWIFT_DESLOP_COLOR": "never"]) { $1 }
+        process.environment = ProcessInfo.processInfo.environment.merging(["DESLOP_COLOR": "never"]) { $1 }
         let scratch = try temporaryDirectory()
         let outputFile = scratch.appendingPathComponent("stdout")
         let errorFile = scratch.appendingPathComponent("stderr")
@@ -55,7 +55,7 @@ struct CommandLineTests {
     }
 
     private func temporaryDirectory() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("swift-deslop-cli-\(UUID().uuidString)")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("deslop-cli-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
@@ -92,7 +92,7 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let result = try run([], in: package)
         #expect(result.status == 0, "\(result.error)")
-        #expect(result.output.hasSuffix("swift-deslop: ok\n"))
+        #expect(result.output.hasSuffix("deslop: ok\n"))
     }
 
     @Test("a report exits 1; the allowlist suppresses only what it lists and notes what is fixed")
@@ -101,7 +101,7 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let reported = try run([], in: package)
         #expect(reported.status == 1, "\(reported.error)")
-        #expect(reported.output.hasSuffix("swift-deslop: 2 errors, well done!\n"))
+        #expect(reported.output.hasSuffix("deslop: 2 errors, well done!\n"))
 
         let allow = scratch.appendingPathComponent("debt.allow").path
         let updated = try run(["--update-allow", allow], in: package)
@@ -113,7 +113,7 @@ struct CommandLineTests {
         ))
         let allowed = try run(["--allow", allow], in: package)
         #expect(allowed.status == 0)
-        #expect(allowed.output.hasSuffix("swift-deslop: ok\n"))
+        #expect(allowed.output.hasSuffix("deslop: ok\n"))
 
         try copyVariant("FieldLeak", "real", onto: package)
         let fixed = try run(["--allow", allow], in: package)
@@ -198,7 +198,7 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let outside = try run([], in: scratch)
         #expect(outside.status == 2)
-        #expect(outside.error.contains("swift-deslop:"))
+        #expect(outside.error.contains("deslop:"))
         let wrong = try run(["--allow"], in: scratch)
         #expect(wrong.status == 2)
         #expect(wrong.error.contains("`--allow` needs one value"))

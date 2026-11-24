@@ -5,7 +5,7 @@ import DeslopModel
 /// non-implicit occurrences; the syntax says which properties are stored,
 /// which declaration holds each reference, what the code does with a field
 /// it names, and which functions are wrappers.
-struct SwiftModelBuilder {
+struct ModelBuilder {
     /// A file the index holds a record of, with its syntax.
     struct Source {
         let file: FileID
@@ -78,7 +78,7 @@ struct SwiftModelBuilder {
             }
             let position = SourcePosition(line: occurrence.line, column: occurrence.column)
             let declaration = source.syntax.declaration(at: position)
-            guard itemOfUSR[symbol.usr] == nil, let shape = SwiftModelBuilder.shape(symbol, declaration) else { continue }
+            guard itemOfUSR[symbol.usr] == nil, let shape = ModelBuilder.shape(symbol, declaration) else { continue }
             let implementsInterface = symbol.kind == .destructor
                 || occurrence.relations.contains { $0.roles.contains(.overrideOf) }
             let id = ItemID(model.items.count)

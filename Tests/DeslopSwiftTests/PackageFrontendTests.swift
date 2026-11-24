@@ -7,7 +7,7 @@ import Testing
 /// The Swift frontend, end to end: Swift ports of deslop-please's fixtures,
 /// built with their index, turned into the model, and linted.
 @Suite("Swift frontend, end to end", .heartbeat, .timeLimit(.minutes(10)))
-struct SwiftFrontendTests {
+struct PackageFrontendTests {
     private struct Run {
         let model: Model
         let diagnostics: [Diagnostic]
@@ -15,7 +15,7 @@ struct SwiftFrontendTests {
         var keys: [String] { diagnostics.map { "\($0.lint.name) \($0.key)" }.sorted() }
 
         func report() -> String {
-            Renderer(tool: "swift-deslop", colored: false).render(diagnostics)
+            Renderer(tool: "deslop", colored: false).render(diagnostics)
         }
     }
 
@@ -24,7 +24,7 @@ struct SwiftFrontendTests {
         defer {
             do { try fixture.remove() } catch { Issue.record("could not remove \(fixture.directory.path): \(error)") }
         }
-        let model = try SwiftPackageFrontend(packageRoot: fixture.directory).model()
+        let model = try PackageFrontend(packageRoot: fixture.directory).model()
         return Run(model: model, diagnostics: Linter().check(model))
     }
 
@@ -124,8 +124,8 @@ struct SwiftFrontendTests {
         defer {
             do { try fixture.remove() } catch { Issue.record("could not remove \(fixture.directory.path): \(error)") }
         }
-        #expect(throws: SwiftFrontendError.self) {
-            try SwiftPackageFrontend(packageRoot: fixture.directory, buildsIndex: false).model()
+        #expect(throws: FrontendError.self) {
+            try PackageFrontend(packageRoot: fixture.directory, buildsIndex: false).model()
         }
     }
 }
