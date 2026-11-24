@@ -220,4 +220,25 @@ struct ModelInvariantTests {
             }
         }
     }
+
+    @Test("a type inherits only types, and no chain of inheritance loops")
+    func inheritance() {
+        var function = base()
+        function.items[0].inherits = [ItemID(1)]
+        #expect(throws: ModelError.invalidInheritance(item: 0)) { try ModelCodec.validate(function) }
+
+        var looping = base()
+        looping.items[0].kind = .type
+        looping.items[1].kind = .type
+        looping.items[0].inherits = [ItemID(1)]
+        looping.items[1].inherits = [ItemID(0)]
+        #expect(throws: ModelError.inheritanceCycle(item: 0)) { try ModelCodec.validate(looping) }
+
+        var dangling = base()
+        dangling.items[0].kind = .type
+        dangling.items[0].inherits = [ItemID(7)]
+        #expect(throws: ModelError.dangling(part: "item", index: 0, field: "inherits", value: 7)) {
+            try ModelCodec.validate(dangling)
+        }
+    }
 }

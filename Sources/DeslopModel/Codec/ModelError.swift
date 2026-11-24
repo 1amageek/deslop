@@ -26,6 +26,10 @@ public enum ModelError: Error, Equatable, Sendable, CustomStringConvertible {
     case invalidFile(file: Int)
     /// A function with more than one wrapper entry.
     case duplicateWrapper(function: Int)
+    /// An item that inherits, or is inherited, while not a type.
+    case invalidInheritance(item: Int)
+    /// A chain of inheritance comes back to where it started.
+    case inheritanceCycle(item: Int)
 
     public var description: String {
         switch self {
@@ -55,6 +59,10 @@ public enum ModelError: Error, Equatable, Sendable, CustomStringConvertible {
             "file \(file): a path is relative and not empty, lines are 0 or more, and a rank is 0 to 3"
         case .duplicateWrapper(let function):
             "wrapper \(function): a function has one wrapper entry at most"
+        case .invalidInheritance(let item):
+            "item \(item): only a type inherits, and only from types"
+        case .inheritanceCycle(let item):
+            "item \(item): its chain of inheritance loops"
         }
     }
 }

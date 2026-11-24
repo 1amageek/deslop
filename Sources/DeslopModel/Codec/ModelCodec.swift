@@ -77,7 +77,14 @@ public enum ModelCodec {
             if let module = item.module { try check(module.index, below: nodes, "item", index, "module") }
             if let file = item.file { try check(file.index, below: files, "item", index, "file") }
             if let parent = item.parent { try check(parent.index, below: items, "item", index, "parent") }
+            for inherited in item.inherits { try check(inherited.index, below: items, "item", index, "inherits") }
         }
+        for (index, item) in model.items.enumerated() where !item.inherits.isEmpty {
+            guard item.kind == .type, item.inherits.allSatisfy({ model.items[$0.index].kind == .type }) else {
+                throw .invalidInheritance(item: index)
+            }
+        }
+        try validateInheritance(model.items)
         for index in model.items.indices {
             var seen: Set<Int> = [index]
             var at = model.items[index].parent
@@ -138,6 +145,31 @@ public enum ModelCodec {
             }
             guard siblings.insert(Sibling(parent: parent.index, kind: node.kind, name: node.name)).inserted else {
                 throw .duplicateNode(node: index)
+            }
+        }
+    }
+
+    /// No chain of inheritance comes back to where it started.
+    private static func validateInheritance(_ items: [Item]) throws(ModelError) {
+        // 0: not seen, 1: on the current chain, 2: done.
+        var state = [UInt8](repeating: 0, count: items.count)
+        for start in items.indices where state[start] == 0 && !items[start].inherits.isEmpty {
+            var stack: [(item: Int, next: Int)] = [(start, 0)]
+            state[start] = 1
+            while let (item, next) = stack.last {
+                let inherited = items[item].inherits
+                guard next < inherited.count else {
+                    state[item] = 2
+                    stack.removeLast()
+                    continue
+                }
+                stack[stack.count - 1].next += 1
+                let to = inherited[next].index
+                if state[to] == 1 { throw .inheritanceCycle(item: start) }
+                if state[to] == 0 {
+                    state[to] = 1
+                    stack.append((to, 0))
+                }
             }
         }
     }

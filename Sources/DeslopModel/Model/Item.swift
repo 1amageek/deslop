@@ -20,6 +20,10 @@ public struct Item: Hashable, Sendable, Codable {
     public var takesSelf: Bool
     /// A field of a marker type, which holds nothing.
     public var holdsNothing: Bool
+    /// For a type, the types whose implementation it inherits and extends,
+    /// such as a class's superclass: what it may work on as its own. An
+    /// interface it only conforms to is none of them.
+    public var inherits: [ItemID]
 
     public init(
         name: String,
@@ -30,7 +34,8 @@ public struct Item: Hashable, Sendable, Codable {
         parent: ItemID? = nil,
         implementsInterface: Bool = false,
         takesSelf: Bool = false,
-        holdsNothing: Bool = false
+        holdsNothing: Bool = false,
+        inherits: [ItemID] = []
     ) {
         self.name = name
         self.owner = owner
@@ -41,5 +46,6 @@ public struct Item: Hashable, Sendable, Codable {
         self.implementsInterface = implementsInterface
         self.takesSelf = takesSelf
         self.holdsNothing = holdsNothing
+        self.inherits = inherits
     }
 }

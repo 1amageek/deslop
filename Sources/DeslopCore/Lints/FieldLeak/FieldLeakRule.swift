@@ -9,7 +9,9 @@ import DeslopModel
 /// value is no leak, with or without a getter. Neither is calling a method
 /// that passes the call on to a field, whose callers never see the field.
 /// Its insiders are its own definition and methods, wherever they are
-/// written, and the things in its tangle. Visibility keywords play no part.
+/// written, the things in its tangle, and the types that inherit its
+/// implementation, such as its subclasses: how a type is extended by
+/// inheritance is its developers' choice. Visibility keywords play no part.
 public struct FieldLeakRule: LintRule {
     public init() {}
 
@@ -25,11 +27,13 @@ public struct FieldLeakRule: LintRule {
         }
         var outside: [ItemID: [Use]] = [:]
         var working: Set<ThingID> = []
+        var inheritance = Inheritance(model: model)
         for usage in graph.uses {
             guard model.item(usage.item).kind == .field, let owner = graph.thing(of: usage.item) else { continue }
             let tangle = graph.tangle(of: owner)
             let insider = usage.user.map { user in
                 user == owner || (tangle != nil && graph.tangle(of: user) == tangle)
+                    || inheritance.inherits(graph.thing(user).item, from: graph.thing(owner).item)
             } ?? false
             if !insider {
                 outside[usage.item, default: []].append(usage)

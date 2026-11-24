@@ -99,3 +99,43 @@ struct FieldLeakTests {
         #expect(keys(idle).isEmpty)
     }
 }
+
+@Suite("field-leak and inheritance")
+struct FieldLeakInheritanceTests {
+    /// `Base { size, name }` in `shapes`, whose `grow` works on both, and
+    /// `Square`, which inherits `Base`'s implementation, in `square`.
+    private func shapes(inherits: Bool) -> Sample {
+        var sample = Sample()
+        let (shapes, square) = (sample.module("shapes"), sample.module("square"))
+        let base = sample.item(shapes, "Base", .type)
+        let size = sample.member(base, shapes, "Base::size", .field)
+        let name = sample.member(base, shapes, "Base::name", .field)
+        let grow = sample.member(base, shapes, "Base::grow", .function)
+        sample.setTakesSelf(grow)
+        sample.refer(grow, size)
+        sample.refer(grow, name)
+        let squareType = sample.item(square, "Square", .type)
+        if inherits { sample.model.items[squareType.index].inherits = [base] }
+        let override = sample.member(squareType, square, "Square::grow", .function)
+        sample.setTakesSelf(override)
+        sample.refer(override, size)
+        return sample
+    }
+
+    @Test("a type that inherits another's implementation is inside it, as its subclass")
+    func subclassIsInside() {
+        #expect(FieldLeakRule().check(shapes(inherits: false).context()).map(\.key) == ["p::shapes::Base::size"])
+        #expect(FieldLeakRule().check(shapes(inherits: true).context()).isEmpty)
+    }
+
+    @Test("what inherits from an inheritor is inside too")
+    func transitive() {
+        var sample = shapes(inherits: true)
+        let leaf = sample.module("leaf")
+        let tiny = sample.item(leaf, "Tiny", .type)
+        sample.model.items[tiny.index].inherits = [sample.named("Square")]
+        let shrink = sample.member(tiny, leaf, "Tiny::shrink", .function)
+        sample.refer(shrink, sample.named("Base::size"))
+        #expect(FieldLeakRule().check(sample.context()).isEmpty)
+    }
+}
