@@ -27,6 +27,13 @@ struct SourceSyntaxTests {
         #expect(try access("g(queue.head)", "head") == .copy)
     }
 
+    @Test("a projected value writes what it names; a closure's anonymous parameter is no projected value")
+    func projected() throws {
+        #expect(try access("let b = $model.name", "name") == .reach)
+        #expect(try access("let n = xs.map { $0.head + 1 }", "head") == .copy)
+        #expect(try access("let n = xs.filter { $1.head == 0 }", "head") == .copy)
+    }
+
     @Test("reaching a member of a field calls on it")
     func call() throws {
         #expect(try access("let n = queue.items.count", "items") == .call)

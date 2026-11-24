@@ -54,7 +54,7 @@ final class SourceSyntax {
         if let token = tokens[position] { return token }
         guard position.column > 1,
               let projected = tokens[SourcePosition(line: position.line, column: position.column - 1)],
-              projected.text.hasPrefix("$") else { return nil }
+              SourceSyntax.isProjectedName(projected.text) else { return nil }
         return projected
     }
 
@@ -190,10 +190,17 @@ final class SourceSyntax {
     /// name, as `$on` is, or its path of members starts at one, as
     /// `$model.settings.name` does.
     private static func isProjected(_ place: Syntax) -> Bool {
-        if place.as(DeclReferenceExprSyntax.self)?.baseName.text.hasPrefix("$") == true { return true }
+        if let name = place.as(DeclReferenceExprSyntax.self)?.baseName.text, isProjectedName(name) { return true }
         var at = place.as(MemberAccessExprSyntax.self)?.base
         while let member = at?.as(MemberAccessExprSyntax.self) { at = member.base }
-        return at?.as(DeclReferenceExprSyntax.self)?.baseName.text.hasPrefix("$") == true
+        return at?.as(DeclReferenceExprSyntax.self).map { isProjectedName($0.baseName.text) } ?? false
+    }
+
+    /// Whether `name` names a projected value, `$model`, and not a closure's
+    /// anonymous parameter, `$0`.
+    private static func isProjectedName(_ name: String) -> Bool {
+        guard name.hasPrefix("$"), let first = name.dropFirst().first else { return false }
+        return first.isLetter || first == "_"
     }
 
     /// Whether `operator` assigns to what stands before it: `=`, `+=`, ...
