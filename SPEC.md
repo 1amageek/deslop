@@ -27,7 +27,7 @@ The model is the single source of truth for the lints. JSON form: `format: "desl
 | `language` | `name`, and `pathSeparator`: what joins a module's and an item's names in reports (`::` for Rust, `.` for Swift). |
 | `nodes` | The hierarchy: one `workspace` root, `package` nodes (a crate, a Swift target), `module` nodes inside them. Each has `name`, `kind`, `parent`, `test`. A node's parent precedes it. |
 | `files` | `path` (relative, `/`-separated), `module`, `test`, `lines` (every line, blank and comment lines too), `rank` (where a reader starts a module: 0 its root file, 1 the file that declares a directory, 2 any other, 3 an example), `declares` (the directory whose members the file declares, if any). |
-| `items` | `name` (as its module writes it, joined by `pathSeparator`), `owner` (the module it is written in), `module` (the module it is, for a module item), `file`, `kind` (`module`, `type`, `impl`, `function`, `field`, `variant`, `constant`, `other`), `parent` (what it is written for), `implementsInterface` (a function that implements a trait or protocol requirement, or overrides), `takesSelf` (works on an instance), `holdsNothing` (a marker field). |
+| `items` | `name` (as its module writes it, joined by `pathSeparator`), `owner` (the module it is written in), `module` (the module it is, for a module item), `file`, `kind` (`module`, `type`, `impl`, `function`, `field`, `variant`, `constant`, `other`), `parent` (what it is written for), `implementsInterface` (a function that implements a trait or protocol requirement, or overrides), `takesSelf` (works on an instance), `holdsNothing` (a marker field), `inherits` (for a type, the types whose implementation it inherits and extends, such as a superclass; conformance to an interface is not inheritance). |
 | `references` | `file`, `line`, `from` (module it is written in), `holder` (innermost item whose definition holds it, if any), `item`, `copies` (the code only reads the value; for a lent accessor's call, only reads what it lends), `test`. |
 | `wrappers` | Functions that add nothing: `forwarder` (`target`, `fields` of `self` it calls on) or `accessor` (`lent`, `copied`, `toRead`). |
 
@@ -36,7 +36,7 @@ Invariants, checked when a model is decoded (violations are `ModelError`):
 1. Every index refers to an existing node, file or item.
 2. Exactly one root, the first node, of kind `workspace`; no other node is a workspace, and every other node's parent precedes it.
 3. A package is inside the workspace or a package; a module is inside a package or a module. No two children of one node share a kind and a name.
-4. Item parent chains end; no chain of forwarders loops; a function has at most one wrapper entry.
+4. Item parent chains end; no chain of forwarders loops; a function has at most one wrapper entry. Only a type inherits, only from types, and no chain of inheritance loops.
 5. `pathSeparator` is not empty. A file's path is relative and not empty, its `lines` 0 or more, its `rank` 0 to 3; a reference's line is 1 or more.
 6. `version` is 1 and `format` is `deslop-model`.
 
@@ -53,7 +53,7 @@ Definitions:
 |---|---|
 | `module-cycle` | Sibling modules whose code names each other's items in a circle. Children of different packages, or a module and its descendants, make no cycle. |
 | `tangle` | A tangle written in more than one module, or of more than 7 things. |
-| `field-leak` | A field of a type that keeps at least one field to itself and has a non-wrapper method taking `self` that uses its fields, when an outsider (not the type, not its tangle) uses that field other than by reading its value. |
+| `field-leak` | A field of a type that keeps at least one field to itself and has a non-wrapper method taking `self` that uses its fields, when an outsider uses that field other than by reading its value. Insiders are the type, the things of its tangle, and the types that inherit it (`inherits`, through any number of steps): how a type is extended by inheritance is its developers' choice, which no lint constrains. |
 | `shallow-module` | A package or a non-test module with child modules that shows more than 7 working functions, hides no more than it shows, and has a list (of things, or of one thing's functions) longer than 7. |
 | `wide-directory` | A directory holding more than 15 source files and directories. |
 | `long-file` | A file of more than 2000 lines. |
@@ -73,21 +73,22 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | `constant` | a global variable, or a stored static property |
 | `variant` | an enum case |
 | `parent` | the type a member is written for, wherever its extension is |
-| `implementsInterface` | a member that overrides, or witnesses a protocol requirement; a deinitializer |
+| `implementsInterface` | a member that overrides; a deinitializer; a function whose name is a requirement of a protocol its type conforms to, wherever the conformance is declared and through any refinement. Requirements come from the workspace and from the records the index keeps of the system modules it imports; they are told apart by name only |
 | `takesSelf` | an instance method, computed instance property or instance subscript |
+| `inherits` | the superclasses a class names, as the index records them |
 | `holdsNothing` | a field of type `Void` or `()` |
 | reference | a non-implicit index occurrence that names an item; `holder` is the innermost declaration around it; an extension's header has none |
-| `copies` (field, or lent accessor) | write role → no; subscripted, `&`-passed or assigned → no; `utf8`/`utf16`/`unicodeScalars` reached on it (a borrow, as Rust's `as_bytes`) → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
+| `copies` (field, or lent accessor) | write role → no; subscripted, `&`-passed or assigned → no; named by a key path declared `WritableKeyPath` or `ReferenceWritableKeyPath` where it is bound → no; a cast (`as`, `as!`, `as?`) or a fallback (`??`) hands it on, and what is done with the result is done with it; `utf8`/`utf16`/`unicodeScalars` reached on it (a borrow, as Rust's `as_bytes`) → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
 | forwarder | a non-witness function whose body is one call to another workspace function, on a parameter, `self` or a field path of `self`, passing exactly the function's own parameters |
 | accessor | a non-witness instance computed property, subscript or method whose body names only fields of its own type, computes nothing, and whose signature writes each field's declared type; fields are lent, `toRead` unless it is a method that writes. An initializer of that shape, which only assigns parameters to fields, is an accessor whose fields are copied: like a Rust struct literal it adds nothing |
 | `rank` / `declares` | `main.swift` or `<Target>.swift` at a target root: 0; `<Dir>.swift` in `<Dir>/`: 1; names compare in any case |
 
 The index comes from `swift build --enable-index-store` in a scratch path of its own (`.build/deslop`), so the package's own builds are untouched; libIndexStore is loaded from the toolchain of the `swift` that builds (`DESLOP_LIBINDEXSTORE` names another). Only the latest unit of each indexed source file is read. An indexed source with no unit, or written after its unit was (an index older than the text, as `--skip-build` can meet), is an error. A file that starts with a byte order mark has its first line's columns counted as the index counts them. A reference names what the active build configuration compiles: code under an inactive `#if` is not seen.
 
-Known limits, each marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided:
+Known limits:
 
-- A member written in a type's body that witnesses a requirement of a protocol the type conforms to in an empty extension is not marked `implementsInterface`.
-- A key path kept in a value and written through later is taken for a read of the field it names.
+- A key path whose writability is not declared where it is bound (inferred, passed as an argument, or returned) and is written through later is taken for a read of the field it names. Marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided.
+- A function that shares a protocol requirement's name but not its signature is taken for its witness.
 
 ## 5. CLI (`deslop`)
 
@@ -96,6 +97,8 @@ deslop [<target-or-module>] [--allow <path> | --update-allow <path>] [--package-
 deslop model [--package-path <dir>] [--skip-build] [--output <path>]
 deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
 ```
+
+A run scoped to a target or module judges only its scope: `--allow` counts an entry as fixed only when nothing reports it anywhere, and `--update-allow` keeps the existing entries that still allow something reported outside the scope.
 
 Output is a compiler-style report; the last line is `deslop: ok` or `deslop: N errors, well done!`. Color: `DESLOP_COLOR=always|never`, then `NO_COLOR`, then whether stdout is a terminal.
 
