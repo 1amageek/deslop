@@ -32,6 +32,9 @@ struct ModelBuilder {
     private var siteOfItem: [ItemID: Site] = [:]
     /// By file and position, the items its references there name.
     private var namedAt: [Site: [ItemID]] = [:]
+    /// Where the index names a type, of the workspace or not: what tells a
+    /// call that constructs a value from any other call.
+    private var typeSites: Set<Site> = []
     /// By reference: where it is, and whether the index says it writes.
     private var referenceSites: [(site: Site, writes: Bool)] = []
 
@@ -47,6 +50,7 @@ struct ModelBuilder {
 
     /// The model, built.
     consuming func build() -> Model {
+        for source in sources { addTypeSites(source) }
         for source in sources { addDefinitions(source) }
         resolveParents()
         for source in sources { addReferences(source) }
@@ -58,6 +62,33 @@ struct ModelBuilder {
     }
 
     // MARK: - Items
+
+    private mutating func addTypeSites(_ source: Source) {
+        let types: Set<IndexSymbol.Kind> = [.struct, .class, .enum, .protocol, .union, .typeAlias]
+        for occurrence in source.occurrences
+        where occurrence.roles.contains(.reference) && types.contains(occurrence.symbol.kind)
+            && occurrence.symbol.subkind != IndexSymbol.Subkind.swiftGenericTypeParameter {
+            typeSites.insert(Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column)))
+        }
+    }
+
+    /// The tokens of a field's type: as written, as its literal value says,
+    /// or as the type its initial value constructs, where the index confirms
+    /// the constructor is a type's name.
+    private func fieldType(_ declaration: Declaration?, in file: FileID) -> [String]? {
+        guard let declaration else { return nil }
+        if let written = declaration.declaredType { return written }
+        guard let constructed = declaration.constructed else { return nil }
+        if let position = constructed.position, !typeSites.contains(Site(file: file, position: position)) {
+            return nil
+        }
+        return constructed.tokens
+    }
+
+    private func fieldType(of item: ItemID) -> [String]? {
+        guard let site = siteOfItem[item] else { return nil }
+        return fieldType(declaration(of: item), in: site.file)
+    }
 
     private mutating func addDefinitions(_ source: Source) {
         let module = model.file(source.file).module
@@ -79,6 +110,15 @@ struct ModelBuilder {
             let position = SourcePosition(line: occurrence.line, column: occurrence.column)
             let declaration = source.syntax.declaration(at: position)
             guard itemOfUSR[symbol.usr] == nil, let shape = ModelBuilder.shape(symbol, declaration) else { continue }
+            // FIXME(INCOMPLETE_IMPLEMENTATION): a witness is told only by the
+            // index's `overrideOf` relation on its definition. A member written in
+            // a type's body that satisfies a requirement of a protocol the type
+            // conforms to in an empty extension (`extension Machine: Steps {}`)
+            // gets no such relation, so it counts as a working function and as a
+            // wrapper candidate. Every `deslop` run that builds a model takes this
+            // path. Done when such members are marked from the conformances the
+            // index records (`baseOf`) and the requirements of those protocols,
+            // workspace or not, with tests for both placements of the members.
             let implementsInterface = symbol.kind == .destructor
                 || occurrence.relations.contains { $0.roles.contains(.overrideOf) }
             let id = ItemID(model.items.count)
@@ -89,7 +129,7 @@ struct ModelBuilder {
                 kind: shape.kind,
                 implementsInterface: implementsInterface,
                 takesSelf: shape.takesSelf,
-                holdsNothing: shape.kind == .field && (declaration?.declaredType).map(TypeFacts.holdsNothing) == true
+                holdsNothing: shape.kind == .field && fieldType(declaration, in: source.file).map(TypeFacts.holdsNothing) == true
             ))
             itemOfUSR[symbol.usr] = id
             if let parent = occurrence.related(.childOf) {
@@ -215,11 +255,11 @@ struct ModelBuilder {
             return true
         case .borrow:
             return fields.allSatisfy { field in
-                declaration(of: field)?.declaredType.map(TypeFacts.isData) ?? false
+                fieldType(of: field).map(TypeFacts.isData) ?? false
             }
         case .call:
             return fields.allSatisfy { field in
-                declaration(of: field)?.declaredType.map(TypeFacts.isScalar) ?? false
+                fieldType(of: field).map(TypeFacts.isScalar) ?? false
             }
         case .reach:
             return false
@@ -371,7 +411,7 @@ struct ModelBuilder {
             }
         }
         let typed = fields.allSatisfy { field in
-            guard let written = self.declaration(of: field)?.declaredType, !written.isEmpty else { return false }
+            guard let written = self.fieldType(of: field), !written.isEmpty else { return false }
             return body.signature.count >= written.count
                 && (0...(body.signature.count - written.count)).contains { Array(body.signature[$0..<$0 + written.count]) == written }
         }

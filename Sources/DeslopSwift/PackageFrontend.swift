@@ -24,26 +24,31 @@ public struct PackageFrontend: ModelSource {
         let toolchain = Toolchain(runner: runner)
         let package = try PackageDescription.describe(packageRoot, runner: runner)
         let layout = try PackageLayout(package: package)
-        let indexed = layout.entries.enumerated().filter { $0.element.indexed }
-        var occurrences: [String: [IndexOccurrence]] = [:]
-        if !indexed.isEmpty {
+        let entries = layout.entries.enumerated().filter { $0.element.indexed }
+        var indexed: [String: IndexStoreReader.Indexed] = [:]
+        if !entries.isEmpty {
             if buildsIndex {
                 try toolchain.buildIndex(root: packageRoot, scratch: scratchPath)
             }
             let store = try toolchain.indexStore(in: scratchPath)
             let library = try IndexStoreLibrary(at: try toolchain.indexStoreLibrary())
             let reader = IndexStoreReader(library: library, store: store)
-            occurrences = try reader.occurrences(of: Set(indexed.map(\.element.absolutePath)))
+            indexed = try reader.occurrences(of: Set(entries.map(\.element.absolutePath)))
         }
         var sources: [ModelBuilder.Source] = []
-        for (index, entry) in indexed {
-            guard let found = occurrences[entry.absolutePath] else {
+        for (index, entry) in entries {
+            guard let found = indexed[entry.absolutePath] else {
                 throw .sourceNotIndexed(path: entry.file.path)
+            }
+            // The index's positions are those of the text it compiled; text
+            // changed since would put its names at other places.
+            guard !found.compiled.precedes(entry.modified) else {
+                throw .indexStale(path: entry.file.path)
             }
             sources.append(ModelBuilder.Source(
                 file: FileID(index),
-                syntax: SourceSyntax(text: entry.text, fileName: entry.file.path),
-                occurrences: found.sorted { ($0.line, $0.column) < ($1.line, $1.column) }
+                syntax: SourceSyntax(text: entry.text, fileName: entry.file.path, byteOrderMark: entry.byteOrderMark),
+                occurrences: found.occurrences.sorted { ($0.line, $0.column) < ($1.line, $1.column) }
             ))
         }
         let model = ModelBuilder(layout: layout, sources: sources).build()

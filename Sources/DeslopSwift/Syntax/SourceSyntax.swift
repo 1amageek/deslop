@@ -13,10 +13,18 @@ final class SourceSyntax {
     /// start together, by start.
     private let holders: [(range: Range<Int>, name: SourcePosition)]
 
-    init(text: String, fileName: String) {
+    /// UTF-8 bytes of a byte order mark the file started with, which the
+    /// index's columns count and the text, read without it, does not.
+    private let byteOrderMark: Int
+
+    init(text: String, fileName: String, byteOrderMark: Int = 0) {
         tree = Parser.parse(source: text)
-        converter = SourceLocationConverter(fileName: fileName, tree: tree)
-        let declarations = DeclarationCollector.declarations(in: tree, converter: converter)
+        let converter = SourceLocationConverter(fileName: fileName, tree: tree)
+        self.converter = converter
+        self.byteOrderMark = byteOrderMark
+        let declarations = DeclarationCollector.declarations(in: tree) { token in
+            SourceSyntax.position(token, converter: converter, byteOrderMark: byteOrderMark)
+        }
         self.declarations = declarations
         holders = declarations
             .map { (range: $0.value.range, name: $0.key) }
@@ -29,8 +37,15 @@ final class SourceSyntax {
     }
 
     func position(_ token: TokenSyntax) -> SourcePosition {
+        SourceSyntax.position(token, converter: converter, byteOrderMark: byteOrderMark)
+    }
+
+    /// Where `token` starts, as the index writes places: its first line's
+    /// columns count any byte order mark.
+    private static func position(_ token: TokenSyntax, converter: SourceLocationConverter, byteOrderMark: Int) -> SourcePosition {
         let location = converter.location(for: token.positionAfterSkippingLeadingTrivia)
-        return SourcePosition(line: location.line, column: location.column)
+        let column = location.line == 1 ? location.column + byteOrderMark : location.column
+        return SourcePosition(line: location.line, column: column)
     }
 
     /// The names of the declarations around `position`, innermost first.
@@ -51,6 +66,14 @@ final class SourceSyntax {
         guard tokens[position] != nil else { return .reach }
         // A name that is no expression, such as an argument label of a
         // memberwise initializer, gives or takes the value whole.
+        // FIXME(INCOMPLETE_IMPLEMENTATION): a key path component (`\.items`)
+        // is also no expression, and is taken for a read. A key path kept in a
+        // value and written through later (`q[keyPath: path].removeAll()`) is a
+        // write the index does not mark at the component, so the leak is
+        // missed. Every reference to a field from a key path takes this path.
+        // Done when a key path's use as writable is followed to its component,
+        // or the frontend states which key path writes it cannot see, with tests
+        // for read-only (`map(\.name)`) and writing uses.
         guard let place = place(at: position) else { return .copy }
         return access(of: place, isField: isField)
     }

@@ -14,6 +14,8 @@ public enum FrontendError: Error, Equatable, Sendable, CustomStringConvertible {
     case indexStoreUnreadable(String)
     /// A source file of the package has no index: it was not built.
     case sourceNotIndexed(path: String)
+    /// A source file changed after the build that indexed it, so the index describes other text.
+    case indexStale(path: String)
     case sourceUnreadable(path: String, reason: String)
     /// The model built breaks an invariant of the model's contract: a defect of the frontend.
     case invalidModel(ModelError)
@@ -32,6 +34,8 @@ public enum FrontendError: Error, Equatable, Sendable, CustomStringConvertible {
             "the index store cannot be read: \(reason)"
         case .sourceNotIndexed(let path):
             "\(path): the index holds no record of this file; build it first"
+        case .indexStale(let path):
+            "\(path): changed since the index was built; build again, without `--skip-build`"
         case .sourceUnreadable(let path, let reason):
             "\(path): \(reason)"
         case .invalidModel(let error):

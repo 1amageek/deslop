@@ -3,24 +3,23 @@ import SwiftSyntax
 /// Finds every declaration of a file that the index can name, by the
 /// position of its name.
 final class DeclarationCollector: SyntaxVisitor {
-    private let converter: SourceLocationConverter
+    private let position: (TokenSyntax) -> SourcePosition
     private var declarations: [SourcePosition: Declaration] = [:]
 
-    private init(converter: SourceLocationConverter) {
-        self.converter = converter
+    private init(position: @escaping (TokenSyntax) -> SourcePosition) {
+        self.position = position
         super.init(viewMode: .sourceAccurate)
     }
 
-    /// Every declaration of `tree` the index can name, by the position of its name.
-    static func declarations(in tree: SourceFileSyntax, converter: SourceLocationConverter) -> [SourcePosition: Declaration] {
-        let collector = DeclarationCollector(converter: converter)
+    /// Every declaration of `tree` the index can name, by the position of
+    /// its name as `position` gives it.
+    static func declarations(
+        in tree: SourceFileSyntax,
+        position: @escaping (TokenSyntax) -> SourcePosition
+    ) -> [SourcePosition: Declaration] {
+        let collector = DeclarationCollector(position: position)
         collector.walk(tree)
         return collector.declarations
-    }
-
-    private func position(_ token: TokenSyntax) -> SourcePosition {
-        let location = converter.location(for: token.positionAfterSkippingLeadingTrivia)
-        return SourcePosition(line: location.line, column: location.column)
     }
 
     private func range(_ node: some SyntaxProtocol) -> Range<Int> {
@@ -131,22 +130,93 @@ final class DeclarationCollector: SyntaxVisitor {
     override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
         let isStatic = DeclarationCollector.isStatic(node.modifiers)
         for binding in node.bindings {
-            guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else { continue }
             let annotated = binding.typeAnnotation.map { DeclarationCollector.tokens($0.type) }
-            let declaredType = annotated ?? binding.initializer.flatMap { DeclarationCollector.literalType($0.value) }
-            let accessors = DeclarationCollector.accessors(binding.accessorBlock)
-            add(pattern.identifier, Declaration(
-                kind: accessors.computed ? .computedProperty : .storedProperty,
-                isStatic: isStatic,
-                declaredType: declaredType,
-                parameters: [],
-                signature: annotated ?? [],
-                bodies: accessors.bodies,
-                hasSetter: accessors.hasSetter,
-                range: range(binding)
-            ))
+            if let pattern = binding.pattern.as(IdentifierPatternSyntax.self) {
+                let accessors = DeclarationCollector.accessors(binding.accessorBlock)
+                var declaration = Declaration(
+                    kind: accessors.computed ? .computedProperty : .storedProperty,
+                    isStatic: isStatic,
+                    declaredType: annotated ?? binding.initializer.flatMap { DeclarationCollector.literalType($0.value) },
+                    parameters: [],
+                    signature: annotated ?? [],
+                    bodies: accessors.bodies,
+                    hasSetter: accessors.hasSetter,
+                    range: range(binding)
+                )
+                if annotated == nil, let value = binding.initializer?.value {
+                    declaration.constructed = constructed(value)
+                }
+                add(pattern.identifier, declaration)
+            } else if let tuple = binding.pattern.as(TuplePatternSyntax.self) {
+                addTuple(
+                    tuple,
+                    type: binding.typeAnnotation?.type.as(TupleTypeSyntax.self),
+                    value: binding.initializer?.value.as(TupleExprSyntax.self),
+                    isStatic: isStatic,
+                    range: range(binding)
+                )
+            }
         }
         return .visitChildren
+    }
+
+    /// Each name of a tuple pattern, `var (left, right): ([Int], [Int])`, as
+    /// a stored property of the type the tuple's type or value gives it.
+    private func addTuple(
+        _ tuple: TuplePatternSyntax,
+        type: TupleTypeSyntax?,
+        value: TupleExprSyntax?,
+        isStatic: Bool,
+        range: Range<Int>
+    ) {
+        let types = type.map { Array($0.elements) }
+        let values = value.map { Array($0.elements) }
+        for (index, element) in tuple.elements.enumerated() {
+            let elementType = types.flatMap { index < $0.count ? DeclarationCollector.tokens($0[index].type) : nil }
+            let elementValue = values.flatMap { index < $0.count ? $0[index].expression : nil }
+            if let name = element.pattern.as(IdentifierPatternSyntax.self) {
+                var declaration = Declaration(
+                    kind: .storedProperty,
+                    isStatic: isStatic,
+                    declaredType: elementType ?? elementValue.flatMap(DeclarationCollector.literalType),
+                    parameters: [],
+                    signature: elementType ?? [],
+                    bodies: [],
+                    hasSetter: false,
+                    range: range
+                )
+                if elementType == nil, let elementValue {
+                    declaration.constructed = constructed(elementValue)
+                }
+                add(name.identifier, declaration)
+            } else if let nested = element.pattern.as(TuplePatternSyntax.self) {
+                let nestedType = types.flatMap { index < $0.count ? $0[index].type.as(TupleTypeSyntax.self) : nil }
+                addTuple(nested, type: nestedType, value: elementValue?.as(TupleExprSyntax.self), isStatic: isStatic, range: range)
+            }
+        }
+    }
+
+    /// The type `value` constructs, if it is a call of a type's name:
+    /// `Inner()`, `Outer.Inner(size: 2)`, `Box<Int>()`, `[Int]()`.
+    private func constructed(_ value: ExprSyntax) -> Declaration.Constructed? {
+        guard let call = value.as(FunctionCallExprSyntax.self) else { return nil }
+        let callee = call.calledExpression
+        if callee.is(ArrayExprSyntax.self) || callee.is(DictionaryExprSyntax.self) {
+            return Declaration.Constructed(tokens: DeclarationCollector.tokens(callee), position: nil)
+        }
+        var named = callee
+        if let generic = named.as(GenericSpecializationExprSyntax.self) {
+            named = generic.expression
+        }
+        let name: TokenSyntax
+        if let reference = named.as(DeclReferenceExprSyntax.self) {
+            name = reference.baseName
+        } else if let member = named.as(MemberAccessExprSyntax.self), member.base != nil {
+            name = member.declName.baseName
+        } else {
+            return nil
+        }
+        return Declaration.Constructed(tokens: DeclarationCollector.tokens(callee), position: position(name))
     }
 
     override func visit(_ node: EnumCaseElementSyntax) -> SyntaxVisitorContinueKind {
@@ -193,8 +263,13 @@ final class DeclarationCollector: SyntaxVisitor {
         parameters.flatMap { tokens($0.type) }
     }
 
-    /// The type a literal initial value gives a property whose type is not written.
+    /// The type a literal initial value gives a property whose type is not
+    /// written: `0` and `-1` an `Int`, `0.5` a `Double`.
     private static func literalType(_ value: ExprSyntax) -> [String]? {
+        if let negated = value.as(PrefixOperatorExprSyntax.self), negated.operator.text == "-",
+           negated.expression.is(IntegerLiteralExprSyntax.self) || negated.expression.is(FloatLiteralExprSyntax.self) {
+            return literalType(negated.expression)
+        }
         if value.is(IntegerLiteralExprSyntax.self) { return ["Int"] }
         if value.is(FloatLiteralExprSyntax.self) { return ["Double"] }
         if value.is(BooleanLiteralExprSyntax.self) { return ["Bool"] }

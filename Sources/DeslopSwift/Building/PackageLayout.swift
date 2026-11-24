@@ -11,6 +11,11 @@ struct PackageLayout {
         /// Absolute, symlinks resolved: how the index names it.
         let absolutePath: String
         let text: String
+        /// UTF-8 bytes of a byte order mark the file starts with, which
+        /// reading it as text drops and the index's columns count.
+        let byteOrderMark: Int
+        /// When the file was last written.
+        let modified: Date
         /// Whether the build compiles it into a module the lints read: a
         /// source of a non-test, non-plugin target.
         let indexed: Bool
@@ -35,8 +40,22 @@ struct PackageLayout {
                 }
                 let url = root.appendingPathComponent(path)
                 let text: String
+                let modified: Date
+                let byteOrderMark: Int
                 do {
-                    text = try String(contentsOf: url, encoding: .utf8)
+                    let data = try Data(contentsOf: url)
+                    byteOrderMark = data.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0
+                    guard let decoded = String(validating: data.dropFirst(byteOrderMark), as: UTF8.self) else {
+                        throw FrontendError.sourceUnreadable(path: path, reason: "not UTF-8 text")
+                    }
+                    text = decoded
+                    let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+                    guard let date = values.contentModificationDate else {
+                        throw FrontendError.sourceUnreadable(path: path, reason: "no modification date")
+                    }
+                    modified = date
+                } catch let error as FrontendError {
+                    throw error
                 } catch {
                     throw .sourceUnreadable(path: path, reason: String(describing: error))
                 }
@@ -53,6 +72,8 @@ struct PackageLayout {
                     file: file,
                     absolutePath: IndexStoreReader.canonical(url.path),
                     text: text,
+                    byteOrderMark: byteOrderMark,
+                    modified: modified,
                     indexed: !target.isTest && target.type != "plugin"
                 ))
             }
@@ -77,14 +98,15 @@ struct PackageLayout {
 
     /// Where a reader starts: `main.swift` or `<Target>.swift` at a target's
     /// root is the target's root file; `<Dir>.swift` in `<Dir>/` declares
-    /// its directory.
+    /// its directory. Names compare in any case: target `tool` has `Tool.swift`.
     private static func rank(source: String, target: PackageDescription.Target) -> (Int, String?) {
         let parts = source.split(separator: "/").map(String.init)
         guard let name = parts.last else { return (2, nil) }
-        if parts.count == 1, name == "main.swift" || name == "\(target.name).swift" {
+        let lowered = name.lowercased()
+        if parts.count == 1, lowered == "main.swift" || lowered == "\(target.name).swift".lowercased() {
             return (0, target.path)
         }
-        if parts.count >= 2, name == "\(parts[parts.count - 2]).swift" {
+        if parts.count >= 2, lowered == "\(parts[parts.count - 2]).swift".lowercased() {
             return (1, joined(target.path, parts.dropLast().joined(separator: "/")))
         }
         return (2, nil)

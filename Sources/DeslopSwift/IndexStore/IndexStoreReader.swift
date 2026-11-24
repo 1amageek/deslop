@@ -11,10 +11,17 @@ struct IndexStoreReader {
         self.store = store
     }
 
-    /// By each of `files` (absolute, symlinks resolved), its occurrences in
-    /// the order the index keeps them. Of the units that compiled a file,
-    /// the latest is read; a file no unit compiled is missing from the result.
-    func occurrences(of files: Set<String>) throws(FrontendError) -> [String: [IndexOccurrence]] {
+    /// What the index holds of one file: when it was compiled, and its occurrences.
+    struct Indexed {
+        let compiled: IndexUnit.Time
+        let occurrences: [IndexOccurrence]
+    }
+
+    /// By each of `files` (absolute, symlinks resolved), what the index holds
+    /// of it, occurrences in the order the index keeps them. Of the units that
+    /// compiled a file, the latest is read; a file no unit compiled is
+    /// missing from the result.
+    func occurrences(of files: Set<String>) throws(FrontendError) -> [String: Indexed] {
         let handle = try library.openStore(at: store.path)
         defer { library.close(handle) }
         var latest: [String: (record: String, modified: IndexUnit.Time)] = [:]
@@ -28,9 +35,10 @@ struct IndexStoreReader {
                 latest[main] = (record.name, unit.modified)
             }
         }
-        var result: [String: [IndexOccurrence]] = [:]
+        var result: [String: Indexed] = [:]
         for (file, chosen) in latest {
-            result[file] = try library.occurrences(ofRecord: chosen.record, in: handle)
+            let occurrences = try library.occurrences(ofRecord: chosen.record, in: handle)
+            result[file] = Indexed(compiled: chosen.modified, occurrences: occurrences)
         }
         return result
     }

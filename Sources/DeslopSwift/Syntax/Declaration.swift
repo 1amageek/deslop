@@ -16,9 +16,20 @@ struct Declaration {
     let kind: Kind
     /// Declared `static` or `class`.
     let isStatic: Bool
+    /// The type a property's initial value constructs, `Inner` for
+    /// `Inner()`, when the index confirms that the name at `position` is a
+    /// type; `position` is `nil` when the syntax alone says so, as `[Int]()` does.
+    struct Constructed {
+        let tokens: [String]
+        let position: SourcePosition?
+    }
+
     /// The tokens of a property's declared type, or of the type its literal
     /// initial value has; `nil` when neither is written.
     let declaredType: [String]?
+    /// The type the property's initial value constructs, when no type is
+    /// written and the value is no literal.
+    var constructed: Constructed? = nil
     /// The internal names of a function's or subscript's parameters, in order.
     let parameters: [String]
     /// The tokens of what comes before the body: parameter and result types,
