@@ -7,6 +7,9 @@ import Foundation
 /// cannot run.
 @main
 struct Deslop {
+    /// The version this source is released as: the tag of its release.
+    static let version = "1.1.0"
+
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
         do throws(CommandError) {
@@ -29,6 +32,9 @@ struct Deslop {
         switch invocation {
         case .help:
             print(InvocationParser.usage, terminator: "")
+            return true
+        case .version:
+            print(version)
             return true
         case .lintPackage(let source, let reporting):
             let model = try sourceModel(source)

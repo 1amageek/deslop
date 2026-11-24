@@ -32,4 +32,6 @@ enum Invocation: Equatable {
     /// Lint a model file, written by any language's frontend.
     case checkModel(modelPath: String, reporting: Reporting)
     case help
+    /// Print the version this build is released as.
+    case version
 }

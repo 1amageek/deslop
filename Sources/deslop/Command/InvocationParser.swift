@@ -33,12 +33,16 @@ enum InvocationParser {
                                   schemes the project or workspace defines)
           --destination <spec>    where xcodebuild builds (default: macOS, else iOS Simulator)
           --toolchain <id>        the toolchain xcodebuild builds with (default: Xcode's)
+          --version               print the version
 
         """
 
     static func parse(_ arguments: [String]) throws(CommandError) -> Invocation {
         if arguments.contains(where: { ["-h", "--help"].contains($0) }) || arguments == ["help"] {
             return .help
+        }
+        if arguments.contains("--version") {
+            return .version
         }
         var words = arguments[...]
         let command: String?

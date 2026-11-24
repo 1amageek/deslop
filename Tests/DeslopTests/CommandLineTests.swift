@@ -229,6 +229,20 @@ struct CommandLineTests {
         #expect(try run(["check", "--help"], in: scratch).status == 0)
     }
 
+    @Test("the version prints alone for any command, as the release tag writes it")
+    func version() throws {
+        let scratch = try temporaryDirectory()
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        let plain = try run(["--version"], in: scratch)
+        #expect(plain.status == 0)
+        #expect(plain.error.isEmpty)
+        #expect(plain.output.wholeMatch(of: /\d+\.\d+\.\d+\n/) != nil)
+        let checked = try run(["check", "--version"], in: scratch)
+        #expect(checked.status == 0)
+        #expect(checked.output == plain.output)
+        #expect(try run(["--version", "--help"], in: scratch).output.hasPrefix("usage:"))
+    }
+
     @Test("a missing allowlist is named once, and a repeated option is said to be repeated")
     func messages() throws {
         let scratch = try temporaryDirectory()

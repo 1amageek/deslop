@@ -129,6 +129,8 @@ The directory is a SwiftPM package when it has a `Package.swift` and neither `--
 
 A run scoped to a target or module judges only its scope: `--allow` counts an entry as fixed only when nothing reports it anywhere, and `--update-allow` keeps the existing entries that still allow something reported outside the scope.
 
+`--help` prints the usage and `--version` the version, the tag of the release built, each alone and for any command.
+
 Output is a compiler-style report; the last line is `deslop: ok` or `deslop: N errors, well done!`. Color: `DESLOP_COLOR=always|never`, then `NO_COLOR`, then whether stdout is a terminal.
 
 ## 6. Acceptance criteria

@@ -16,6 +16,7 @@ deslop --allow .deslop.allow          # new errors still fail
 deslop --scheme App                   # an Xcode project or workspace: only scheme App
 deslop model --output model.json      # the package's model, as JSON
 deslop check --model model.json       # lint any frontend's model
+deslop --version                      # the version, as its release tag writes it
 ```
 
 Exit status: `0` nothing reported, `1` reports, `2` cannot run.
