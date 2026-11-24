@@ -60,6 +60,17 @@ Requires macOS 15 or later, or Linux, and a Swift toolchain; tested with
 Swift 6.4.1 on macOS and in the `swift:6.4.1` Linux image. Xcode projects
 need macOS and Xcode.
 
+With [Mint](https://github.com/yonaskolb/Mint):
+
+```bash
+mint install 1amageek/deslop@1.0.0   # links ~/.mint/bin/deslop
+```
+
+Or, in a `Mintfile`, add the line `1amageek/deslop@1.0.0` and run
+`mint run deslop`.
+
+From source:
+
 ```bash
 git clone --branch 1.0.0 --depth 1 https://github.com/1amageek/deslop.git
 cd deslop
