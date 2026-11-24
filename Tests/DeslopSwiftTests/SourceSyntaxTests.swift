@@ -16,7 +16,7 @@ struct SourceSyntaxTests {
             let text = lines[at.line - 1].utf8.dropFirst(at.column - 1)
             return fields.contains { String(decoding: text, as: UTF8.self).hasPrefix($0) }
         }
-        let facts = NameFacts(isField: isField, takesWritableKeyPath: { _ in false })
+        let facts = NameFacts(isField: isField, keyPathSignature: { _ in nil }, keyPathFlow: { _ in nil })
         return call ? syntax.callAccess(at: position, facts: facts) : syntax.access(at: position, facts: facts)
     }
 

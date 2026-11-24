@@ -259,6 +259,71 @@ struct FrontendFidelityTests {
         ])
     }
 
+    @Test("a key path is followed through properties, returns, collections and attributes, across files")
+    func keyPathStoredAndReturned() throws {
+        let package = try TemporaryPackage(sources: [
+            "Store/Queue.swift": """
+                public struct Queue {
+                    var labelled: [Int] = []
+                    var stored: [Int] = []
+                    var storedRead: [Int] = []
+                    var declaredRead: [Int] = []
+                    var returned: [Int] = []
+                    var returnedRead: [Int] = []
+                    var inArray: [Int] = []
+                    var compared: [Int] = []
+                    var attributed: [Int] = []
+                    var cycled: [Int] = []
+                    var kept: [Int] = []
+                    private var head: Int = 0
+                    public init() {}
+                    public mutating func pop() -> Int? { head += 1; return kept.first }
+                }
+                """,
+            "Client/Tools.swift": """
+                public func set(keyPath: WritableKeyPath<Queue, [Int]>, on q: inout Queue) { q[keyPath: keyPath] = [] }
+                @propertyWrapper public struct Sorted {
+                    public var wrappedValue: Int
+                    public init(wrappedValue: Int, _ by: KeyPath<Queue, [Int]>) { self.wrappedValue = wrappedValue }
+                }
+                public enum Paths {
+                    static let stored = \\Queue.stored
+                    static let storedRead = \\Queue.storedRead
+                    static let declaredRead: KeyPath<Queue, [Int]> & Sendable = \\.declaredRead
+                    static func returned() -> WritableKeyPath<Queue, [Int]> { \\.returned }
+                    static var returnedRead: KeyPath<Queue, [Int]> { \\.returnedRead }
+                }
+                """,
+            "Client/User.swift": """
+                public struct User {
+                    @Sorted(\\Queue.attributed) var order: Int = 0
+                    public func labelled(_ q: inout Queue) { set(keyPath: \\.labelled, on: &q) }
+                    public func stored(_ q: inout Queue) { q[keyPath: Paths.stored].append(1) }
+                    public func reads(_ q: Queue) -> [[Int]] {
+                        [q[keyPath: Paths.storedRead], q[keyPath: Paths.declaredRead], q[keyPath: Paths.returnedRead]]
+                    }
+                    public func returned(_ q: inout Queue) { q[keyPath: Paths.returned()] = [] }
+                    public func inArray(_ q: inout Queue) {
+                        let all: [WritableKeyPath<Queue, [Int]>] = [\\.inArray]
+                        for path in all { q[keyPath: path] = [] }
+                    }
+                    public func compared(_ path: PartialKeyPath<Queue>) -> Bool { path == \\Queue.compared }
+                }
+                public struct Cycle {
+                    var path: WritableKeyPath<Queue, [Int]> = \\.cycled
+                    var other: WritableKeyPath<Queue, [Int]> = \\.kept
+                    public mutating func swap() { (path, other) = (other, path); path = other; other = path }
+                }
+                """,
+        ])
+        defer { clean(package) }
+        let found = try keys(package)
+        #expect(found == [
+            "field-leak Lib.Store.Queue.inArray", "field-leak Lib.Store.Queue.labelled",
+            "field-leak Lib.Store.Queue.returned", "field-leak Lib.Store.Queue.stored",
+        ])
+    }
+
     @Test("an overload that shares a requirement's name but not its signature does not implement it")
     func overloadIsNoWitness() throws {
         let package = try TemporaryPackage(sources: [

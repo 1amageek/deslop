@@ -13,12 +13,6 @@ struct ModelBuilder {
         let occurrences: [IndexOccurrence]
     }
 
-    /// Where an item is defined: its file and the position of its name.
-    private struct Site: Hashable {
-        let file: FileID
-        let position: SourcePosition
-    }
-
     private var model: Model
     private let sources: [Source]
     private var itemOfUSR: [String: ItemID] = [:]
@@ -43,9 +37,9 @@ struct ModelBuilder {
     private var typeSites: Set<Site> = []
     /// Where the index names a struct or an enum: a value type.
     private var valueTypeSites: Set<Site> = []
-    /// Where code calls a function, of the workspace or not, whose
-    /// signature takes a writable key path, as its USR says.
-    private var writableKeyPathCalls: Set<Site> = []
+    /// Where the index names something, of the workspace or not, what its
+    /// signature declares of key paths, as its USR says.
+    private var keyPathSignatures: [Site: KeyPathSignature] = [:]
     /// By function, its USR, which says its signature.
     private var usrOfItem: [ItemID: String] = [:]
     /// By reference: where it is, and whether the index says it writes.
@@ -64,27 +58,33 @@ struct ModelBuilder {
 
     /// The model, built.
     consuming func build() -> Model {
-        for source in sources { addTypeSites(source) }
+        var signatureOfUSR: [String: KeyPathSignature] = [:]
+        for source in sources { addTypeSites(source, signatureOfUSR: &signatureOfUSR) }
         for source in sources { addDefinitions(source) }
         markWitnesses()
         resolveInheritance()
         resolveParents()
         for source in sources { addReferences(source) }
-        markCopies()
+        let names = nameIndex()
+        markCopies(names)
         let wrappers = findWrappers()
         model.wrappers = wrappers
-        markLentReads()
+        markLentReads(names)
         return model
     }
 
     // MARK: - Items
 
-    private mutating func addTypeSites(_ source: Source) {
-        for occurrence in source.occurrences
-        where occurrence.roles.contains(.call) && occurrence.symbol.usr.contains("WritableKeyPath") {
-            writableKeyPathCalls.insert(Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column)))
-        }
+    private mutating func addTypeSites(_ source: Source, signatureOfUSR: inout [String: KeyPathSignature]) {
         let types: Set<IndexSymbol.Kind> = [.struct, .class, .enum, .protocol, .union, .typeAlias]
+        for occurrence in source.occurrences
+        where occurrence.roles.contains(.reference) && !types.contains(occurrence.symbol.kind) {
+            let usr = occurrence.symbol.usr
+            let signature = signatureOfUSR[usr] ?? KeyPathSignature(usr: usr)
+            signatureOfUSR[usr] = signature
+            let site = Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column))
+            keyPathSignatures[site] = max(keyPathSignatures[site] ?? .readOnly, signature)
+        }
         for occurrence in source.occurrences
         where occurrence.roles.contains(.reference) && types.contains(occurrence.symbol.kind)
             && occurrence.symbol.subkind != IndexSymbol.Subkind.swiftGenericTypeParameter {
@@ -307,18 +307,24 @@ struct ModelBuilder {
         syntaxOfFile[file]
     }
 
-    /// What the index says of the names of `file` that its syntax cannot tell.
-    private func facts(_ file: FileID) -> NameFacts {
-        let namedAt = namedAt
-        let items = model.items
-        let writableKeyPathCalls = writableKeyPathCalls
-        return NameFacts(
-            isField: { position in
-                (namedAt[Site(file: file, position: position)] ?? []).contains { items[$0.index].kind == .field }
-            },
-            takesWritableKeyPath: { position in
-                writableKeyPathCalls.contains(Site(file: file, position: position))
-            }
+    /// What the index says of the names of the workspace's files, once
+    /// every item and reference is known.
+    private func nameIndex() -> NameIndex {
+        // Every place that names an item is followed, those the index marks as
+        // writes too: it marks a key path applied to mutate, as in
+        // `q[keyPath: Paths.items].append(1)`, as a write of what holds it.
+        var usesOfItem: [ItemID: [Site]] = [:]
+        for (index, reference) in model.references.enumerated() {
+            usesOfItem[reference.item, default: []].append(referenceSites[index].site)
+        }
+        return NameIndex(
+            items: model.items,
+            usrOfItem: usrOfItem,
+            itemAtSite: itemAtSite,
+            namedAt: namedAt,
+            signatures: keyPathSignatures,
+            usesOfItem: usesOfItem,
+            syntaxOfFile: syntaxOfFile
         )
     }
 
@@ -362,29 +368,29 @@ struct ModelBuilder {
     }
 
     /// What the reference at `index` does with what it names.
-    private func access(_ index: Int, propertyLike: Bool) -> Access {
+    private func access(_ index: Int, propertyLike: Bool, names: NameIndex) -> Access {
         let (site, writes) = referenceSites[index]
         if writes { return .reach }
         guard let syntax = syntax(of: site.file) else { return .reach }
-        let facts = facts(site.file)
+        let facts = names.facts(site.file)
         return propertyLike
             ? syntax.access(at: site.position, facts: facts)
             : syntax.callAccess(at: site.position, facts: facts)
     }
 
     /// Marks the references to fields that only read the field's value.
-    private mutating func markCopies() {
+    private mutating func markCopies(_ names: NameIndex) {
         for index in model.references.indices {
             let field = model.references[index].item
             guard model.item(field).kind == .field else { continue }
-            model.references[index].copies = onlyReads(access(index, propertyLike: true), [field])
+            model.references[index].copies = onlyReads(access(index, propertyLike: true, names: names), [field])
         }
     }
 
     /// Marks the calls of accessors that lend to read, directly or through
     /// forwarders, that only read what they lend: `queue.head + 1` reads
     /// `_head` when `head` hands it out.
-    private mutating func markLentReads() {
+    private mutating func markLentReads(_ names: NameIndex) {
         for index in model.references.indices {
             let named = model.references[index].item
             var called = named
@@ -395,7 +401,7 @@ struct ModelBuilder {
             guard case .accessor(let lent, _, true) = model.wrappers[called], !lent.isEmpty else { continue }
             let kind = declaration(of: named)?.kind
             let propertyLike = kind == .computedProperty || kind == .subscript
-            model.references[index].copies = onlyReads(access(index, propertyLike: propertyLike), lent)
+            model.references[index].copies = onlyReads(access(index, propertyLike: propertyLike, names: names), lent)
         }
     }
 

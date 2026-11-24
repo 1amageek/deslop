@@ -18,11 +18,13 @@ let package = Package(
         .target(name: "DeslopModel"),
         .target(name: "DeslopCore", dependencies: ["DeslopModel"]),
         .target(name: "CIndexStore"),
+        .target(name: "CSwiftRuntime"),
         .target(
             name: "DeslopSwift",
             dependencies: [
                 "DeslopModel",
                 "CIndexStore",
+                "CSwiftRuntime",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
             ]

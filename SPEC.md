@@ -78,16 +78,27 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | `inherits` | the superclasses a class names, as the index records them |
 | `holdsNothing` | a field of type `Void` or `()` |
 | reference | a non-implicit index occurrence that names an item; `holder` is the innermost declaration around it; an extension's header has none |
-| `copies` (field, or lent accessor) | write role → no; assigned or `&`-passed → no; reached through a projected value (`$model.name`, a `Binding` that writes it) → no; named by a key path → what is done where the key path is used (in a subscript as with the field there, the subscript's members reaching it; bound to a name, wherever the name is used in the code that binds it; passed to a function whose USR takes a `WritableKeyPath` → no; declared writable where it is bound → no); a cast (`as`, `as!`, `as?`) or a fallback (`??`) hands it on, and what is done with the result is done with it. Otherwise, of a field whose type is a value type (a struct or enum as the index names it, an array, dictionary or literal type, or an optional or tuple of those) → yes: what is reached or subscripted on a value reads it, and the index marks a mutating use as a write. Of any other field: subscripted → no; `utf8`/`utf16`/`unicodeScalars` reached on it → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
+| `copies` (field, or lent accessor) | write role → no; assigned or `&`-passed → no; reached through a projected value (`$model.name`, a `Binding` that writes it) → no; named by a key path → what is done where the key path's value goes, as below; a cast (`as`, `as!`, `as?`) or a fallback (`??`) hands it on, and what is done with the result is done with it. Otherwise, of a field whose type is a value type (a struct or enum as the index names it, an array, dictionary or literal type, or an optional or tuple of those) → yes: what is reached or subscripted on a value reads it, and the index marks a mutating use as a write. Of any other field: subscripted → no; `utf8`/`utf16`/`unicodeScalars` reached on it → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
 | forwarder | a non-witness function whose body is one call to another workspace function, on a parameter, `self` or a field path of `self`, passing exactly the function's own parameters |
 | accessor | a non-witness instance computed property, subscript or method whose body names only fields of its own type, computes nothing, and whose signature writes each field's declared type; fields are lent, `toRead` unless it is a method that writes. An initializer of that shape, which only assigns parameters to fields, is an accessor whose fields are copied: like a Rust struct literal it adds nothing |
 | `rank` / `declares` | `main.swift` or `<Target>.swift` at a target root: 0; `<Dir>.swift` in `<Dir>/`: 1; names compare in any case |
 
 The index comes from `swift build --enable-index-store` in a scratch path of its own (`.build/deslop`), so the package's own builds are untouched; libIndexStore is loaded from the toolchain of the `swift` that builds (`DESLOP_LIBINDEXSTORE` names another). Only the latest unit of each indexed source file is read. An indexed source with no unit, or written after its unit was (an index older than the text, as `--skip-build` can meet), is an error. A file that starts with a byte order mark has its first line's columns counted as the index counts them. A reference names what the active build configuration compiles: code under an inactive `#if` is not seen.
 
-Known limits:
+A key path is followed from where it is written to where its value goes; what is done there is done with the field it names:
 
-- A key path stored in a property, returned, or put in a collection is not followed further, and is taken for a read of its field. Marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided.
+| Where the value goes | What it does |
+|---|---|
+| applied in a `[keyPath:]` subscript | what is done there with the field; a member reached on it → no |
+| passed to a function, subscript, initializer, attribute, macro or operator | no, when the signature of what it is passed to declares a `WritableKeyPath` or `ReferenceWritableKeyPath`, or is not one the index names; else yes. The signature is the index's USR of it, demangled by the Swift runtime: a mangling writes a repeated word as a back reference, so its text cannot be searched |
+| bound or assigned to a local | what each use that may see it does: those after it in the code that declares the local, any in a loop around the assignment; a tuple target, each of its elements |
+| iterated by `for` | what each use of the loop's name does |
+| stored in, assigned to or returned from a property, function or subscript the index names | yes, when its USR declares no writable key path; else what every place in the workspace that names it does with its value, those the index marks as writes included: it marks applying a key path to mutate as a write of what holds it. A use that leads back to one being followed adds nothing |
+| returned from a local function or closure | what is done with what it returns; a closure whose written result declares no writable key path → yes |
+| in an array, dictionary, tuple or parentheses, a branch of `?:`, `if` or `switch`, either side of `??`, or cast to a writable key path | what is done with the whole |
+| cast to another type, compared or combined by operators whose signatures declare no writable key path, matched by a `case`, interpolated, discarded | yes |
+| what holds it, assigned to | nothing is done with it |
+| anywhere else | no: it may be written through |
 
 ### 4.1 Xcode projects
 
