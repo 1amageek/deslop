@@ -45,7 +45,7 @@ struct Deslop {
                 do {
                     try data.write(to: URL(fileURLWithPath: output))
                 } catch {
-                    throw .failure("\(output): \(error.localizedDescription)")
+                    throw .failure("\(output): \(LintRun.reason(error))")
                 }
             } else {
                 FileHandle.standardOutput.write(data + Data("\n".utf8))
@@ -56,7 +56,7 @@ struct Deslop {
             do {
                 data = try Data(contentsOf: URL(fileURLWithPath: modelPath))
             } catch {
-                throw .failure("\(modelPath): \(error.localizedDescription)")
+                throw .failure("\(modelPath): \(LintRun.reason(error))")
             }
             let model: Model
             do {

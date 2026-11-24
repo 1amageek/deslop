@@ -54,6 +54,11 @@ struct CommandLineTests {
         return run
     }
 
+    /// The last line `text` prints.
+    private func lastLine(_ text: String) -> Substring? {
+        text.split(separator: "\n").last
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("deslop-cli-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -92,7 +97,7 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let result = try run([], in: package)
         #expect(result.status == 0, "\(result.error)")
-        #expect(result.output.hasSuffix("deslop: ok\n"))
+        #expect(lastLine(result.output) == "deslop: ok")
     }
 
     @Test("a report exits 1; the allowlist suppresses only what it lists and notes what is fixed")
@@ -101,19 +106,19 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let reported = try run([], in: package)
         #expect(reported.status == 1, "\(reported.error)")
-        #expect(reported.output.hasSuffix("deslop: 2 errors, well done!\n"))
+        #expect(lastLine(reported.output) == "deslop: 2 errors, well done!")
 
         let allow = scratch.appendingPathComponent("debt.allow").path
         let updated = try run(["--update-allow", allow], in: package)
         #expect(updated.status == 0)
-        #expect(updated.error.contains("wrote 2 entries"))
+        #expect(updated.error.hasPrefix("deslop: wrote 2 entries"))
         let entries = try String(contentsOfFile: allow, encoding: .utf8)
         #expect(entries.hasSuffix(
             "field-leak RunQueue.Queue.RunQueue.head\nfield-leak RunQueue.Queue.RunQueue.items\n"
         ))
         let allowed = try run(["--allow", allow], in: package)
         #expect(allowed.status == 0)
-        #expect(allowed.output.hasSuffix("deslop: ok\n"))
+        #expect(lastLine(allowed.output) == "deslop: ok")
 
         try copyVariant("FieldLeak", "real", onto: package)
         let fixed = try run(["--allow", allow], in: package)
@@ -198,11 +203,64 @@ struct CommandLineTests {
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
         let outside = try run([], in: scratch)
         #expect(outside.status == 2)
-        #expect(outside.error.contains("deslop:"))
+        #expect(outside.error.hasPrefix("deslop: "))
         let wrong = try run(["--allow"], in: scratch)
         #expect(wrong.status == 2)
         #expect(wrong.error.contains("`--allow` needs one value"))
         let both = try run(["--allow", "a", "--update-allow", "b"], in: scratch)
         #expect(both.status == 2)
+    }
+
+    @Test("help prints for any command, its lines aligned under the command")
+    func help() throws {
+        let scratch = try temporaryDirectory()
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        let plain = try run(["--help"], in: scratch)
+        #expect(plain.status == 0)
+        let lines = plain.output.split(separator: "\n", omittingEmptySubsequences: false)
+        let first = try #require(lines.first)
+        let second = lines[1]
+        let firstOption = try #require(first.firstIndex(of: "["))
+        let continued = try #require(second.firstIndex(of: "["))
+        #expect(first.distance(from: first.startIndex, to: firstOption) == second.distance(from: second.startIndex, to: continued))
+        #expect(try run(["check", "--help"], in: scratch).status == 0)
+    }
+
+    @Test("a missing allowlist is named once, and a repeated option is said to be repeated")
+    func messages() throws {
+        let scratch = try temporaryDirectory()
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        let model = scratch.appendingPathComponent("model.json")
+        try ModelCodec.encode(Model(language: Language(name: "swift", pathSeparator: "."))).write(to: model)
+        let missing = try run(["check", "--model", model.path, "--allow", "nowhere.allow"], in: scratch)
+        #expect(missing.status == 2)
+        #expect(missing.error.components(separatedBy: "nowhere.allow").count == 2, "\(missing.error)")
+        let repeated = try run(["check", "--model", "a.json", "--model", "b.json"], in: scratch)
+        #expect(repeated.status == 2)
+        #expect(repeated.error.contains("`--model` is given more than once"))
+    }
+
+    @Test("a scoped run counts as fixed only what is fixed everywhere")
+    func scopedFixedCount() throws {
+        let scratch = try temporaryDirectory()
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        var tree = Tree()
+        let p = tree.child(of: Tree.root, kind: .package, name: "P")
+        let q = tree.child(of: Tree.root, kind: .package, name: "Q")
+        let model = Model(
+            language: Language(name: "swift", pathSeparator: "."),
+            tree: tree,
+            files: [
+                SourceFile(path: "Sources/P/p.swift", module: p, test: false, lines: 1),
+                SourceFile(path: "Sources/Q/q.swift", module: q, test: false, lines: 2_001),
+            ]
+        )
+        let path = scratch.appendingPathComponent("model.json")
+        try ModelCodec.encode(model).write(to: path)
+        let allow = scratch.appendingPathComponent("debt.allow")
+        try Data("long-file Sources/Q/q.swift\n".utf8).write(to: allow)
+        let scoped = try run(["check", "--model", path.path, "P", "--allow", allow.path], in: scratch)
+        #expect(scoped.status == 0)
+        #expect(!scoped.output.contains("now fixed"), "\(scoped.output)")
     }
 }

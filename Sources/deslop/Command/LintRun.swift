@@ -26,7 +26,8 @@ struct LintRun {
         } else {
             scope = nil
         }
-        let all = Linter().check(model, scope: scope)
+        let linter = Linter()
+        let all = linter.check(model, scope: scope)
         if let path = reporting.updateAllow {
             let text = AllowList(diagnostics: all).text(tool: LintRun.tool)
             try write(text, to: path)
@@ -35,15 +36,15 @@ struct LintRun {
         var reported = all
         var fixed = 0
         if let path = reporting.allow {
+            let text = try read(path)
             let allow: AllowList
             do {
-                allow = try AllowList(parsing: try read(path))
-            } catch let error as AllowListError {
-                throw .failure("\(path):\(error)")
+                allow = try AllowList(parsing: text)
             } catch {
-                throw .failure("\(path): \(error)")
+                throw .failure("\(path):\(error)")
             }
-            fixed = allow.fixedCount(all)
+            // An entry is fixed only where nothing reports it, in scope or out of it.
+            fixed = allow.fixedCount(scope == nil ? all : linter.check(model))
             reported = all.filter { !allow.allows($0) }
         }
         let text = Renderer(tool: LintRun.tool, colored: colored)
@@ -55,8 +56,15 @@ struct LintRun {
         do {
             return try String(contentsOfFile: path, encoding: .utf8)
         } catch {
-            throw .failure("\(path): \(error.localizedDescription)")
+            throw .failure("\(path): \(LintRun.reason(error))")
         }
+    }
+
+    /// Why a file operation failed, without the file's name, which the
+    /// message already leads with.
+    static func reason(_ error: any Error) -> String {
+        let described = error as NSError
+        return described.localizedFailureReason ?? described.localizedDescription
     }
 
     private func write(_ text: String, to path: String) throws(CommandError) {
@@ -65,7 +73,7 @@ struct LintRun {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data(text.utf8).write(to: url)
         } catch {
-            throw .failure("\(path): \(error.localizedDescription)")
+            throw .failure("\(path): \(LintRun.reason(error))")
         }
     }
 }

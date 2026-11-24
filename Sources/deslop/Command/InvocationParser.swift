@@ -2,7 +2,7 @@
 enum InvocationParser {
     static let usage = """
         usage: deslop [<target-or-module>] [--allow <path> | --update-allow <path>]
-                            [--package-path <dir>] [--skip-build]
+                      [--package-path <dir>] [--skip-build]
                deslop model [--package-path <dir>] [--skip-build] [--output <path>]
                deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
 
@@ -27,7 +27,7 @@ enum InvocationParser {
         """
 
     static func parse(_ arguments: [String]) throws(CommandError) -> Invocation {
-        if arguments.count == 1, ["-h", "--help", "help"].contains(arguments[0]) {
+        if arguments.contains(where: { ["-h", "--help"].contains($0) }) || arguments == ["help"] {
             return .help
         }
         var words = arguments[...]
@@ -45,9 +45,8 @@ enum InvocationParser {
         while let word = words.first {
             words = words.dropFirst()
             if valued.contains(word) {
-                guard let value = words.first, values[word] == nil else {
-                    throw .usage("`\(word)` needs one value")
-                }
+                guard values[word] == nil else { throw .usage("`\(word)` is given more than once") }
+                guard let value = words.first else { throw .usage("`\(word)` needs one value") }
                 values[word] = value
                 words = words.dropFirst()
             } else if word == "--skip-build" {
