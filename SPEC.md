@@ -73,12 +73,12 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | `constant` | a global variable, or a stored static property |
 | `variant` | an enum case |
 | `parent` | the type a member is written for, wherever its extension is |
-| `implementsInterface` | a member that overrides; a deinitializer; a function whose name is a requirement of a protocol its type conforms to, wherever the conformance is declared and through any refinement. Requirements come from the workspace and from the records the index keeps of the system modules it imports; they are told apart by name only |
+| `implementsInterface` | a member that overrides; a deinitializer; a function that meets a requirement of a protocol its type conforms to, wherever the conformance is declared and through any refinement: the requirement has its name and, as their USRs write it, its signature; or, when the requirement's signature names `Self` or an associated type, it is the only function of that name in its type. Requirements come from the workspace and from the records the index keeps of the system modules it imports |
 | `takesSelf` | an instance method, computed instance property or instance subscript |
 | `inherits` | the superclasses a class names, as the index records them |
 | `holdsNothing` | a field of type `Void` or `()` |
 | reference | a non-implicit index occurrence that names an item; `holder` is the innermost declaration around it; an extension's header has none |
-| `copies` (field, or lent accessor) | write role → no; subscripted, `&`-passed or assigned → no; named by a key path declared `WritableKeyPath` or `ReferenceWritableKeyPath` where it is bound → no; a cast (`as`, `as!`, `as?`) or a fallback (`??`) hands it on, and what is done with the result is done with it; `utf8`/`utf16`/`unicodeScalars` reached on it (a borrow, as Rust's `as_bytes`) → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
+| `copies` (field, or lent accessor) | write role → no; subscripted, `&`-passed or assigned → no; named by a key path → what is done where the key path is used: in a subscript (`q[keyPath: \.items]`) as with the field there; bound to a name, wherever the name is used in the code that binds it; passed to a function whose USR takes a `WritableKeyPath` → no; declared writable where it is bound → no; a cast (`as`, `as!`, `as?`) or a fallback (`??`) hands it on, and what is done with the result is done with it; `utf8`/`utf16`/`unicodeScalars` reached on it (a borrow, as Rust's `as_bytes`) → only if its type is plain data; another member reached on it → only if its type is a scalar; any other use of its value, an argument label included → yes |
 | forwarder | a non-witness function whose body is one call to another workspace function, on a parameter, `self` or a field path of `self`, passing exactly the function's own parameters |
 | accessor | a non-witness instance computed property, subscript or method whose body names only fields of its own type, computes nothing, and whose signature writes each field's declared type; fields are lent, `toRead` unless it is a method that writes. An initializer of that shape, which only assigns parameters to fields, is an accessor whose fields are copied: like a Rust struct literal it adds nothing |
 | `rank` / `declares` | `main.swift` or `<Target>.swift` at a target root: 0; `<Dir>.swift` in `<Dir>/`: 1; names compare in any case |
@@ -87,8 +87,7 @@ The index comes from `swift build --enable-index-store` in a scratch path of its
 
 Known limits:
 
-- A key path whose writability is not declared where it is bound (inferred, passed as an argument, or returned) and is written through later is taken for a read of the field it names. Marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided.
-- A function that shares a protocol requirement's name but not its signature is taken for its witness.
+- A key path stored in a property, returned, or put in a collection is not followed further, and is taken for a read of its field. Marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided.
 
 ## 5. CLI (`deslop`)
 
