@@ -323,7 +323,7 @@ struct FrontendFidelityTests {
         #expect(try keys(package) == ["field-leak Lib.Model.Library.cache", "field-leak Lib.Model.Library.staged"])
     }
 
-    @Test("a binding to a model's property, `$model.property`, writes it; reading the property reads it")
+    @Test("a binding to a model's property, `$model.property`, writes it; reading the property reads it", .enabled(if: Platform.hasSwiftUI))
     func bindingWrites() throws {
         let package = try TemporaryPackage(sources: [
             "Model/Model.swift": """
@@ -377,7 +377,7 @@ struct FrontendFidelityTests {
         #expect(try keys(package) == ["field-leak Lib.Model.Board.cells"])
     }
 
-    @Test("a view's own `$property` is its own use, wherever the index places it in the token")
+    @Test("a view's own `$property` is its own use, wherever the index places it in the token", .enabled(if: Platform.hasSwiftUI))
     func ownProjectedValue() throws {
         let package = try TemporaryPackage(sources: [
             "Screens/Parent.swift": """

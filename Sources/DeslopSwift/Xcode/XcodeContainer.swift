@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// What `xcodebuild` builds: a workspace, or a project; and the projects it holds.
 struct XcodeContainer: Sendable {

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// Runs `xcodebuild` on a container: lists its schemes, chooses where each
 /// builds, and builds each into one derived data directory, writing its index.

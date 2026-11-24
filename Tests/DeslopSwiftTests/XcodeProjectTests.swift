@@ -50,7 +50,7 @@ struct XcodeProjectTests {
         return project
     }
 
-    @Test("a target's files are found through its groups, and a synchronized folder's less its exceptions")
+    @Test("a target's files are found through its groups, and a synchronized folder's less its exceptions", .enabled(if: Platform.hasXcode))
     func targets() throws {
         let root = try directory()
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: root) } }

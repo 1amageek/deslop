@@ -7,7 +7,7 @@ import Testing
 
 /// The Xcode frontend, end to end: an Xcode project with a file-system-
 /// synchronized app target and a test target, built with its index.
-@Suite("Xcode frontend, end to end", .heartbeat, .timeLimit(.minutes(10)))
+@Suite("Xcode frontend, end to end", .heartbeat, .timeLimit(.minutes(10)), .enabled(if: Platform.hasXcode))
 struct XcodeFrontendTests {
     @Test("an Xcode project is checked as a package is, with test code left out")
     func project() throws {

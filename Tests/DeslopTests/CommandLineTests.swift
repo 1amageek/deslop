@@ -21,10 +21,13 @@ struct CommandLineTests {
         .deletingLastPathComponent()
         .appendingPathComponent("Fixtures")
 
-    /// The executable the test bundle was built with: beside the bundle.
-    private static let executable = Bundle(for: BundleMarker.self).bundleURL
-        .deletingLastPathComponent()
-        .appendingPathComponent("deslop")
+    /// The executable the test bundle was built with: beside the `.xctest`
+    /// bundle on macOS, in the directory Linux names as the bundle.
+    private static let executable: URL = {
+        let bundle = Bundle(for: BundleMarker.self).bundleURL
+        let directory = bundle.pathExtension == "xctest" ? bundle.deletingLastPathComponent() : bundle
+        return directory.appendingPathComponent("deslop")
+    }()
 
     private func run(_ arguments: [String], in directory: URL) throws -> Run {
         let process = Process()
@@ -290,7 +293,7 @@ struct CommandLineTests {
         #expect(try run(["check", "--model", path.path, "--allow", allow.path], in: scratch).status == 0)
     }
 
-    @Test("an Xcode project's directory is checked as a package's is")
+    @Test("an Xcode project's directory is checked as a package's is", .enabled(if: Platform.hasXcode))
     func xcodeProject() throws {
         let (project, scratch) = try fixture("Xcode")
         defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }

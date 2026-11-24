@@ -56,7 +56,9 @@ deslop        command line
 
 ## Install
 
-Requires macOS 15 or later and a Swift toolchain; tested with Swift 6.4.1.
+Requires macOS 15 or later, or Linux, and a Swift toolchain; tested with
+Swift 6.4.1 on macOS and in the `swift:6.4.1` Linux image. Xcode projects
+need macOS and Xcode.
 
 ```bash
 git clone https://github.com/1amageek/deslop.git
