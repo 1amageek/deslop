@@ -61,10 +61,48 @@ Swift 6.4.1 on macOS and in the `swift:6.4.1` Linux image. Xcode projects
 need macOS and Xcode.
 
 ```bash
-git clone https://github.com/1amageek/deslop.git
+git clone --branch 1.0.0 --depth 1 https://github.com/1amageek/deslop.git
 cd deslop
 swift build -c release --product deslop
-cp .build/release/deslop /usr/local/bin/   # or anywhere on your PATH
+cp .build/release/deslop ~/.local/bin/   # or anywhere on your PATH
+```
+
+## What it checks
+
+`deslop` reads the index the compiler writes as it builds, so the code must
+build, and it checks what that build compiles: code in an inactive `#if`
+branch, or for another platform, is not checked. A project that needs setup
+before it builds, such as `pod install`, must be set up first; when the build
+fails, `deslop` says why and exits with `2`.
+
+An allowlist holds one `<lint> <key>` per line, as `--update-allow` writes it.
+An entry for a circle also allows every circle whose members are among its
+own. When entries no longer allow anything, `deslop` counts them and suggests
+`--update-allow` to drop them, so the list can only shrink.
+
+## Use in CI
+
+```yaml
+jobs:
+  deslop:
+    runs-on: ubuntu-latest
+    container: swift:6.4.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git clone --branch 1.0.0 --depth 1 https://github.com/1amageek/deslop.git /tmp/deslop
+          swift build -c release --product deslop --package-path /tmp/deslop
+          /tmp/deslop/.build/release/deslop --allow .deslop.allow
+```
+
+## Use the libraries
+
+The model, the lints and the Swift frontend are libraries too: a frontend for
+another language writes a `DeslopModel` and lints it with `DeslopCore`, or
+writes the model's JSON for `deslop check`.
+
+```swift
+.package(url: "https://github.com/1amageek/deslop.git", from: "1.0.0"),
 ```
 
 ## Test
