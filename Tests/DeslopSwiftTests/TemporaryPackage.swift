@@ -12,7 +12,7 @@ struct TemporaryPackage {
             // swift-tools-version: 6.0
             import PackageDescription
 
-            let package = Package(name: "\(target)", targets: [.target(name: "\(target)")])
+            let package = Package(name: "\(target)", platforms: [.macOS(.v15)], targets: [.target(name: "\(target)")])
 
             """
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)

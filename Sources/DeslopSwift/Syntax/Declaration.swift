@@ -30,6 +30,9 @@ struct Declaration {
     /// The type the property's initial value constructs, when no type is
     /// written and the value is no literal.
     var constructed: Constructed? = nil
+    /// Whether its type is a value type, as far as the syntax says: the
+    /// written type's shape, a literal's (a value), or the constructed type's.
+    var shape: TypeShape = .unknown
     /// The internal names of a function's or subscript's parameters, in order.
     let parameters: [String]
     /// The tokens of what comes before the body: parameter and result types,

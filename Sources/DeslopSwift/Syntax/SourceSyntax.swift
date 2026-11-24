@@ -67,6 +67,9 @@ final class SourceSyntax {
         // A name that is no expression, such as an argument label of a
         // memberwise initializer, gives or takes the value whole.
         guard let place = place(at: position) else { return .copy }
+        // `$model.name` makes a `Binding` through the projected value, which
+        // writes what it names; the index marks it as a read only.
+        if SourceSyntax.isProjected(place) { return .reach }
         return access(of: place, facts: facts)
     }
 
@@ -118,7 +121,7 @@ final class SourceSyntax {
                 return SourceSyntax.borrows.contains(member.declName.baseName.text) ? .borrow : .call
             }
             if let subscripted = parent.as(SubscriptCallExprSyntax.self), subscripted.calledExpression.id == current.id {
-                return .reach
+                return .subscripted
             }
             if let call = parent.as(FunctionCallExprSyntax.self), call.calledExpression.id == current.id {
                 return .call
@@ -203,7 +206,10 @@ final class SourceSyntax {
             return .copy
         }
         if let subscripted = list.parent?.as(SubscriptCallExprSyntax.self), argument.label?.text == "keyPath" {
-            return access(of: Syntax(subscripted), facts: facts)
+            // The index marks no write at a key path's component, so a member
+            // reached through `[keyPath:]` may mutate what it names: it reaches.
+            let reached = access(of: Syntax(subscripted), facts: facts)
+            return reached == .call || reached == .subscripted ? .reach : reached
         }
         if let call = list.parent?.as(FunctionCallExprSyntax.self), let callee = SourceSyntax.calleeName(call) {
             return facts.takesWritableKeyPath(position(callee)) ? .reach : .copy
@@ -229,6 +235,14 @@ final class SourceSyntax {
     /// Members that lend a view of a value to read it, as Rust's `as_bytes`
     /// borrows: they hand out nothing of how the value is kept.
     static let borrows: Set<String> = ["utf8", "utf16", "unicodeScalars"]
+
+    /// Whether a place is reached through a projected value: its path of
+    /// members starts at a `$` name, as `$model.settings.name` does.
+    private static func isProjected(_ place: Syntax) -> Bool {
+        var at = place.as(MemberAccessExprSyntax.self)?.base
+        while let member = at?.as(MemberAccessExprSyntax.self) { at = member.base }
+        return at?.as(DeclReferenceExprSyntax.self)?.baseName.text.hasPrefix("$") == true
+    }
 
     /// Whether `operator` assigns to what stands before it: `=`, `+=`, ...
     private static func assigns(_ element: ExprSyntax) -> Bool {

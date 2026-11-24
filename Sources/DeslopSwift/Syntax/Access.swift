@@ -7,8 +7,10 @@ enum Access: Int, Sendable, Comparable {
     case borrow
     /// Reaches a member of it: `queue.items.count`, `queue.items.first()`.
     case call
-    /// Writes it, passes it `inout`, or subscripts it: `queue.head = 0`,
-    /// `swap(&queue.head, &other)`, `queue.items[0]`.
+    /// Subscripts it: `queue.items[0]`. A read of a value, unless the index
+    /// marks a write; else it reaches into the field.
+    case subscripted
+    /// Writes it, or passes it `inout`: `queue.head = 0`, `swap(&queue.head, &other)`.
     case reach
 
     /// Least to most: what a place does at most, when it is used in more than one way.

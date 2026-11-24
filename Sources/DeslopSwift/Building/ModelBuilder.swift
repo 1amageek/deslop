@@ -41,6 +41,8 @@ struct ModelBuilder {
     /// Where the index names a type, of the workspace or not: what tells a
     /// call that constructs a value from any other call.
     private var typeSites: Set<Site> = []
+    /// Where the index names a struct or an enum: a value type.
+    private var valueTypeSites: Set<Site> = []
     /// Where code calls a function, of the workspace or not, whose
     /// signature takes a writable key path, as its USR says.
     private var writableKeyPathCalls: Set<Site> = []
@@ -86,7 +88,11 @@ struct ModelBuilder {
         for occurrence in source.occurrences
         where occurrence.roles.contains(.reference) && types.contains(occurrence.symbol.kind)
             && occurrence.symbol.subkind != IndexSymbol.Subkind.swiftGenericTypeParameter {
-            typeSites.insert(Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column)))
+            let site = Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column))
+            typeSites.insert(site)
+            if occurrence.symbol.kind == .struct || occurrence.symbol.kind == .enum {
+                valueTypeSites.insert(site)
+            }
         }
     }
 
@@ -321,12 +327,27 @@ struct ModelBuilder {
         return syntax(of: site.file)?.declaration(at: site.position)
     }
 
+    /// Whether a field's type is a value type: a struct, an enum, or what
+    /// holds only those, as its declaration and the index say.
+    private func isValueType(_ field: ItemID) -> Bool {
+        guard let site = siteOfItem[field], let declaration = declaration(of: field) else { return false }
+        return declaration.shape.isValue { valueTypeSites.contains(Site(file: site.file, position: $0)) }
+    }
+
     /// Whether code that does `access` with `fields` only reads their values:
-    /// uses a value, lends a view of plain data, or reaches a member of a scalar.
+    /// uses a value, lends a view of plain data, or reaches a member of a
+    /// scalar or of any value type. A value is a copy: what is reached on it
+    /// cannot change the field, and the index marks a mutating use of it as a
+    /// write, which reaches.
     private func onlyReads(_ access: Access, _ fields: [ItemID]) -> Bool {
+        if access == .call || access == .borrow || access == .subscripted, fields.allSatisfy(isValueType) {
+            return true
+        }
         switch access {
         case .copy:
             return true
+        case .subscripted:
+            return false
         case .borrow:
             return fields.allSatisfy { field in
                 fieldType(of: field).map(TypeFacts.isData) ?? false

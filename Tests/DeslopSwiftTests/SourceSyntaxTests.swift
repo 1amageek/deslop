@@ -45,7 +45,7 @@ struct SourceSyntaxTests {
         #expect(try access("queue.head = 0", "head") == .reach)
         #expect(try access("queue.head += 1", "head") == .reach)
         #expect(try access("touch(&queue.head)", "head") == .reach)
-        #expect(try access("let x = queue.items[0]", "items") == .reach)
+        #expect(try access("let x = queue.items[0]", "items") == .subscripted)
         #expect(try access("let same = queue.head == 0", "head") == .copy)
     }
 

@@ -146,6 +146,7 @@ final class DeclarationCollector: SyntaxVisitor {
                 if annotated == nil, let value = binding.initializer?.value {
                     declaration.constructed = constructed(value)
                 }
+                declaration.shape = shape(written: binding.typeAnnotation?.type, value: binding.initializer?.value)
                 add(pattern.identifier, declaration)
             } else if let tuple = binding.pattern.as(TuplePatternSyntax.self) {
                 addTuple(
@@ -188,12 +189,27 @@ final class DeclarationCollector: SyntaxVisitor {
                 if elementType == nil, let elementValue {
                     declaration.constructed = constructed(elementValue)
                 }
+                let writtenType = type.flatMap { index < $0.elements.count ? Array($0.elements)[index].type : nil }
+                declaration.shape = shape(written: writtenType, value: elementValue)
                 add(name.identifier, declaration)
             } else if let nested = element.pattern.as(TuplePatternSyntax.self) {
                 let nestedType = types.flatMap { index < $0.count ? $0[index].type.as(TupleTypeSyntax.self) : nil }
                 addTuple(nested, type: nestedType, value: elementValue?.as(TupleExprSyntax.self), isStatic: isStatic, range: range)
             }
         }
+    }
+
+    /// The shape of a property's type: the one written, or else the one its
+    /// initial value gives: a literal's, a constructed type's.
+    private func shape(written: TypeSyntax?, value: ExprSyntax?) -> TypeShape {
+        if let written { return TypeShape.of(written, position: position) }
+        guard let value else { return .unknown }
+        if DeclarationCollector.literalType(value) != nil || value.is(ArrayExprSyntax.self)
+            || value.is(DictionaryExprSyntax.self) {
+            return .value
+        }
+        guard let constructed = constructed(value) else { return .unknown }
+        return constructed.position.map(TypeShape.named) ?? .value
     }
 
     /// The type `value` constructs, if it is a call of a type's name:

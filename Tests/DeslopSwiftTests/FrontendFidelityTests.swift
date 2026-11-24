@@ -173,7 +173,7 @@ struct FrontendFidelityTests {
     func castAndFallback() throws {
         let package = try TemporaryPackage(sources: [
             "Store/Holder.swift": """
-                public struct Inner {
+                public final class Inner {
                     public init() {}
                     public func go() -> Int { 1 }
                 }
@@ -282,5 +282,98 @@ struct FrontendFidelityTests {
         #expect(intScale.map { model.items[$0].implementsInterface } == true)
         // `make()` returns `Self` in the protocol, `Machine` here: told by being the only `make`.
         #expect(witnesses.contains("Machine.make()"))
+    }
+
+    @Test("a value-typed field is read by what reads its members; a mutating use or a class's members reach it")
+    func valueTypes() throws {
+        let package = try TemporaryPackage(sources: [
+            "Model/Model.swift": """
+                public struct Photo { public var title = "" }
+                public final class Cache { public init() {}; public func clear() {} }
+                public enum Mode { case grid, list }
+                public struct Library {
+                    var photos: [Photo] = []
+                    var selected: Photo? = nil
+                    var mode: Mode = .grid
+                    var pair: (Int, String) = (0, "")
+                    var cache = Cache()
+                    var staged: [Photo] = []
+                    private var revision: Int = 0
+                    public init() {}
+                    public mutating func add(_ photo: Photo) { photos.append(photo); staged = []; revision += 1; cache.clear() }
+                }
+                """,
+            "View/View.swift": """
+                public func summary(_ library: Library) -> String {
+                    let empty = library.photos.isEmpty
+                    let first = library.photos.first?.title ?? ""
+                    let title = library.selected?.title ?? ""
+                    let second = library.photos.count > 1 ? library.photos[1].title : ""
+                    return "\\(empty) \\(first) \\(title) \\(second) \\(library.mode.hashValue) \\(library.pair.1.count)"
+                }
+                public func reset(_ library: inout Library) {
+                    library.cache.clear()
+                    library.staged.removeAll()
+                }
+                """,
+        ])
+        defer { clean(package) }
+        // Reading members of `photos`, `selected`, `mode` and `pair` reads
+        // values; `cache` is a class, and `removeAll` mutates `staged`.
+        #expect(try keys(package) == ["field-leak Lib.Model.Library.cache", "field-leak Lib.Model.Library.staged"])
+    }
+
+    @Test("a binding to a model's property, `$model.property`, writes it; reading the property reads it")
+    func bindingWrites() throws {
+        let package = try TemporaryPackage(sources: [
+            "Model/Model.swift": """
+                import Observation
+
+                @Observable
+                public final class Model {
+                    var showSheet = false
+                    var name = ""
+                    private var revision = 0
+                    public init() {}
+                    public func refresh() { revision += 1; showSheet = false; name = "" }
+                }
+                """,
+            "Screen/Screen.swift": """
+                import SwiftUI
+
+                public struct Screen: View {
+                    @Bindable var model: Model
+                    public var body: some View {
+                        VStack {
+                            Toggle("Sheet", isOn: $model.showSheet)
+                            Text(model.name)
+                        }
+                    }
+                }
+                """,
+        ])
+        defer { clean(package) }
+        #expect(try keys(package) == ["field-leak Lib.Model.Model.showSheet"])
+    }
+
+    @Test("writing through a subscript of a value-typed field reaches it; reading through one reads it")
+    func subscriptWrites() throws {
+        let package = try TemporaryPackage(sources: [
+            "Model/Model.swift": """
+                public struct Board {
+                    var cells: [Int] = [0, 0]
+                    var names: [String: String] = [:]
+                    private var turns: Int = 0
+                    public init() {}
+                    public mutating func play(_ at: Int) { cells[at] = 1; names["last"] = "x"; turns += 1 }
+                }
+                """,
+            "Game/Game.swift": """
+                public func cheat(_ board: inout Board) { board.cells[0] = 9 }
+                public func peek(_ board: Board) -> String? { board.names["last"] }
+                """,
+        ])
+        defer { clean(package) }
+        #expect(try keys(package) == ["field-leak Lib.Model.Board.cells"])
     }
 }

@@ -32,11 +32,12 @@ struct PackageFrontendTests {
     func fieldLeak() throws {
         let run = try lint("FieldLeak")
         let report = run.report()
-        #expect(report.contains("error[field-leak]: `RunQueue.items` is known outside `RunQueue`: 4 places in 2 modules"))
+        // Only the writes leak: `items` is an array, a value, so reading its
+        // count or its elements reads the field.
+        #expect(report.contains("error[field-leak]: `RunQueue.items` is known outside `RunQueue`: 1 place in 1 module"))
         #expect(report.contains("""
                 RunQueue.Queue.RunQueue
-                  items ◀━┳━ 2  RunQueue.Sched.Policy
-                          ┗━ 2  RunQueue.Sched.Report
+                  items ◀━━━ 1  RunQueue.Sched.Policy
                   also known outside: head
                   kept: limit
 
