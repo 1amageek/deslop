@@ -349,6 +349,37 @@ struct FrontendFidelityTests {
         #expect(witnesses.contains("Machine.make()"))
     }
 
+    @Test("a witness whose name repeats a word its type's name has is told by its signature too")
+    func witnessNameSharesWords() throws {
+        // A mangling writes a word it has written before as a back reference:
+        // in `Machine`, `scaleMachine` is written `05scaleB0`, in `Scales` whole.
+        let package = try TemporaryPackage(sources: [
+            "Steps/Scales.swift": """
+                public protocol Scales {
+                    func scaleMachine(_ by: Int) -> Int
+                    subscript(_ at: Int) -> Int { get }
+                }
+                """,
+            "Machine/Machine.swift": """
+                public struct Machine {
+                    public init() {}
+                    public func scaleMachine(_ by: Int) -> Int { by }
+                    public func scaleMachine(_ by: Double) -> Double { by }
+                    public subscript(_ at: Int) -> Int { at }
+                    public subscript(_ at: Double) -> Double { at }
+                }
+                extension Machine: Scales {}
+                """,
+        ])
+        defer { clean(package) }
+        let model = try PackageFrontend(packageRoot: package.directory).model()
+        let witnesses = model.items.filter { $0.implementsInterface }.map(\.name)
+        #expect(witnesses.filter { $0 == "Machine.scaleMachine(_:)" }.count == 1)
+        #expect(witnesses.filter { $0 == "Machine.subscript(_:)" }.count == 1)
+        let intScale = model.items.firstIndex { $0.name == "Machine.scaleMachine(_:)" }
+        #expect(intScale.map { model.items[$0].implementsInterface } == true)
+    }
+
     @Test("a value-typed field is read by what reads its members; a mutating use or a class's members reach it")
     func valueTypes() throws {
         let package = try TemporaryPackage(sources: [

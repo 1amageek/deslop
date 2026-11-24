@@ -73,7 +73,7 @@ Diagnostics are sorted by lint, then key. The allowlist is one `<lint> <key>` pe
 | `constant` | a global variable, or a stored static property |
 | `variant` | an enum case |
 | `parent` | the type a member is written for, wherever its extension is |
-| `implementsInterface` | a member that overrides; a deinitializer; a function that meets a requirement of a protocol its type conforms to, wherever the conformance is declared and through any refinement: the requirement has its name and, as their USRs write it, its signature; or, when the requirement's signature names `Self` or an associated type, it is the only function of that name in its type. Requirements come from the workspace and from the records the index keeps of the system modules it imports |
+| `implementsInterface` | a member that overrides; a deinitializer; a function that meets a requirement of a protocol its type conforms to, wherever the conformance is declared and through any refinement: the requirement has its name and, as their USRs demangled by the Swift runtime write what follows the name, its signature; or, when the requirement's signature names `Self` or an associated type, it is the only function of that name in its type. Requirements come from the workspace and from the records the index keeps of the system modules it imports |
 | `takesSelf` | an instance method, computed instance property or instance subscript |
 | `inherits` | the superclasses a class names, as the index records them |
 | `holdsNothing` | a field of type `Void` or `()` |

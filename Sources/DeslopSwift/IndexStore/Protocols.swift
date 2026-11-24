@@ -50,17 +50,27 @@ struct Protocols: Sendable {
         return named ? .name : .none
     }
 
-    /// The signature a USR writes after a function's base name: `SiyF` of
-    /// `s:5Proto5StepsP1aSiyF` for `a()`. A conformer's witness writes the
-    /// same, unless the requirement's names `Self` or an associated type.
-    /// `nil` when the USR does not write the base name as an identifier, as
-    /// for initializers and operators.
+    /// The signature a USR writes after a function's base name, demangled:
+    /// `(_: Swift.Int) -> Swift.Int` of `Lib.Machine.scaleMachine(_: Swift.Int) -> Swift.Int`,
+    /// ` : Swift.Int` of a property. A conformer's witness writes the same,
+    /// unless the requirement's names `Self` or an associated type. `nil`
+    /// for an initializer or an operator, whose signature names the type it
+    /// is written in or its operands, and where the runtime does not demangle
+    /// the USR or the text does not write the name.
     static func signature(usr: String, name: String) -> String? {
         let base = name.prefix { $0 != "(" }
-        guard !base.isEmpty, base.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
-        let token = "\(base.utf8.count)\(base)"
-        guard let found = usr.ranges(of: token).last else { return nil }
-        return String(usr[found.upperBound...])
+        guard !base.isEmpty, base != "init", base.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }),
+              let text = Demangled.text(ofUSR: usr) else { return nil }
+        // The first place the text writes the name as a member, after the
+        // context it is written in: what follows is the signature.
+        var from = text.startIndex
+        while let found = text.range(of: "." + base, range: from..<text.endIndex) {
+            if found.upperBound < text.endIndex, "( <".contains(text[found.upperBound]) {
+                return String(text[found.upperBound...])
+            }
+            from = found.upperBound
+        }
+        return nil
     }
 
     /// `protocols` and every protocol they refine, through any number of steps.
