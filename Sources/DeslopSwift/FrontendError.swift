@@ -17,6 +17,18 @@ public enum FrontendError: Error, Equatable, Sendable, CustomStringConvertible {
     /// A source file changed after the build that indexed it, so the index describes other text.
     case indexStale(path: String)
     case sourceUnreadable(path: String, reason: String)
+    /// No Xcode workspace or project is at the top of `directory`.
+    case noProject(directory: String)
+    /// More than one workspace, or more than one project, is there.
+    case ambiguousProject(directory: String, candidates: [String])
+    /// A project or workspace file cannot be read.
+    case projectUnreadable(path: String, reason: String)
+    /// A scheme `--scheme` names is not one the container lists.
+    case schemeNotFound(scheme: String, available: [String])
+    /// No platform is one every target of the scheme supports.
+    case noDestination(scheme: String)
+    /// A non-test target with Swift sources that no built scheme compiled.
+    case targetNotBuilt(target: String)
     /// The model built breaks an invariant of the model's contract: a defect of the frontend.
     case invalidModel(ModelError)
 
@@ -38,6 +50,18 @@ public enum FrontendError: Error, Equatable, Sendable, CustomStringConvertible {
             "\(path): changed since the index was built; build again, without `--skip-build`"
         case .sourceUnreadable(let path, let reason):
             "\(path): \(reason)"
+        case .noProject(let directory):
+            "\(directory): not a Swift package (no Package.swift) nor an Xcode project or workspace"
+        case .ambiguousProject(let directory, let candidates):
+            "\(directory): holds \(candidates.joined(separator: ", ")); pass `--project` or `--workspace`"
+        case .projectUnreadable(let path, let reason):
+            "\(path): \(reason)"
+        case .schemeNotFound(let scheme, let available):
+            "no scheme `\(scheme)`; the schemes are \(available.joined(separator: ", "))"
+        case .noDestination(let scheme):
+            "scheme \(scheme): its targets share no platform to build for; pass `--destination`"
+        case .targetNotBuilt(let target):
+            "target \(target): no scheme built it, so its code is not checked; add it to a scheme, or pass `--scheme` to check only some"
         case .invalidModel(let error):
             "the Swift frontend built an invalid model: \(error)"
         }

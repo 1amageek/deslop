@@ -15,6 +15,7 @@ final class IndexStoreLibrary {
     private let unitReaderIsSystemUnit: cis_unit_reader_bool_f
     private let unitReaderHasMainFile: cis_unit_reader_bool_f
     private let unitReaderMainFile: cis_unit_reader_string_f
+    private let unitReaderModuleName: cis_unit_reader_string_f
     private let unitReaderModificationTime: cis_unit_reader_get_modification_time_f
     private let unitReaderDependenciesApply: cis_unit_reader_dependencies_apply_f
     private let dependencyKind: cis_unit_dependency_get_kind_f
@@ -57,6 +58,7 @@ final class IndexStoreLibrary {
         unitReaderIsSystemUnit = try load("indexstore_unit_reader_is_system_unit", as: cis_unit_reader_bool_f.self)
         unitReaderHasMainFile = try load("indexstore_unit_reader_has_main_file", as: cis_unit_reader_bool_f.self)
         unitReaderMainFile = try load("indexstore_unit_reader_get_main_file", as: cis_unit_reader_string_f.self)
+        unitReaderModuleName = try load("indexstore_unit_reader_get_module_name", as: cis_unit_reader_string_f.self)
         unitReaderModificationTime = try load(
             "indexstore_unit_reader_get_modification_time", as: cis_unit_reader_get_modification_time_f.self
         )
@@ -137,6 +139,7 @@ final class IndexStoreLibrary {
         }
         return IndexUnit(
             isSystem: unitReaderIsSystemUnit(unit),
+            moduleName: IndexStoreLibrary.string(unitReaderModuleName(unit)),
             mainFile: unitReaderHasMainFile(unit) ? IndexStoreLibrary.string(unitReaderMainFile(unit)) : nil,
             modified: IndexUnit.Time(seconds: seconds, nanoseconds: nanoseconds),
             records: context.elements

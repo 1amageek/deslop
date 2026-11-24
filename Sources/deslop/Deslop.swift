@@ -30,11 +30,11 @@ struct Deslop {
         case .help:
             print(InvocationParser.usage, terminator: "")
             return true
-        case .lintPackage(let packagePath, let buildsIndex, let reporting):
-            let model = try packageModel(packagePath, buildsIndex: buildsIndex)
+        case .lintPackage(let source, let reporting):
+            let model = try sourceModel(source)
             return try report(LintRun(reporting: reporting, colored: colored()).run(model))
-        case .exportModel(let packagePath, let buildsIndex, let output):
-            let model = try packageModel(packagePath, buildsIndex: buildsIndex)
+        case .exportModel(let source, let output):
+            let model = try sourceModel(source)
             let data: Data
             do {
                 data = try ModelCodec.encode(model)
@@ -68,13 +68,35 @@ struct Deslop {
         }
     }
 
-    private static func packageModel(_ path: String, buildsIndex: Bool) throws(CommandError) -> Model {
-        let root = URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+    /// The model of what `source` describes: a SwiftPM package when its
+    /// directory has a `Package.swift` and no Xcode option names a project;
+    /// else an Xcode workspace or project there.
+    private static func sourceModel(_ source: Invocation.Source) throws(CommandError) -> Model {
+        let root = URL(fileURLWithPath: source.path, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
             .standardizedFileURL
+        let isPackage = FileManager.default.fileExists(atPath: root.appendingPathComponent("Package.swift").path)
         do {
-            return try PackageFrontend(packageRoot: root, buildsIndex: buildsIndex).model()
-        } catch {
+            if isPackage && !source.namesXcode {
+                guard source.schemes.isEmpty, source.destination == nil, source.toolchain == nil else {
+                    throw CommandError.usage("Xcode options apply to an Xcode project; this is a Swift package")
+                }
+                return try PackageFrontend(packageRoot: root, buildsIndex: source.buildsIndex).model()
+            }
+            return try XcodeFrontend(
+                root: root,
+                project: source.project,
+                workspace: source.workspace,
+                schemes: source.schemes,
+                destination: source.destination,
+                toolchain: source.toolchain,
+                buildsIndex: source.buildsIndex
+            ).model()
+        } catch let error as CommandError {
+            throw error
+        } catch let error as FrontendError {
             throw .failure(error.description)
+        } catch {
+            throw .failure(String(describing: error))
         }
     }
 

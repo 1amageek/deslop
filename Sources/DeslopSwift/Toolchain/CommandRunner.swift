@@ -10,8 +10,8 @@ struct CommandRunner: Sendable {
 
     /// Runs `arguments` through `/usr/bin/env`, in `directory`. A command that
     /// cannot start, or exits other than 0, is a failure.
-    func run(_ arguments: [String], in directory: URL? = nil) throws(FrontendError) -> Data {
-        let output = try runAllowingFailure(arguments, in: directory)
+    func run(_ arguments: [String], in directory: URL? = nil, environment: [String: String]? = nil) throws(FrontendError) -> Data {
+        let output = try runAllowingFailure(arguments, in: directory, environment: environment)
         guard output.status == 0 else {
             throw .commandFailed(command: arguments.joined(separator: " "), status: output.status, output: output.standardError)
         }
@@ -23,7 +23,12 @@ struct CommandRunner: Sendable {
     /// so a command that prints more than a pipe holds never blocks; the
     /// directory is removed once the output is read. A failure on the way
     /// leaves it in the system's temporary directory, and is reported.
-    func runAllowingFailure(_ arguments: [String], in directory: URL? = nil) throws(FrontendError) -> Output {
+    /// `environment`, when given, replaces the process's own.
+    func runAllowingFailure(
+        _ arguments: [String],
+        in directory: URL? = nil,
+        environment: [String: String]? = nil
+    ) throws(FrontendError) -> Output {
         let command = arguments.joined(separator: " ")
         func failure(_ error: any Error) -> FrontendError {
             .commandFailed(command: command, status: -1, output: String(describing: error))
@@ -36,6 +41,7 @@ struct CommandRunner: Sendable {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = arguments
         if let directory { process.currentDirectoryURL = directory }
+        if let environment { process.environment = environment }
         do {
             try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: outputFile.path, contents: nil)

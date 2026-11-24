@@ -289,4 +289,28 @@ struct CommandLineTests {
         #expect(entries == ["long-file Sources/P/p.swift", "long-file Sources/Q/q.swift"])
         #expect(try run(["check", "--model", path.path, "--allow", allow.path], in: scratch).status == 0)
     }
+
+    @Test("an Xcode project's directory is checked as a package's is")
+    func xcodeProject() throws {
+        let (project, scratch) = try fixture("Xcode")
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        let result = try run([], in: project)
+        #expect(result.status == 1, "\(result.error)")
+        #expect(result.output.contains("error[field-leak]: `RunQueue.items` is known outside `RunQueue`"))
+        #expect(lastLine(result.output) == "deslop: 1 error, well done!")
+        let scoped = try run(["--scheme", "Tool"], in: project)
+        #expect(scoped.status == 1, "\(scoped.error)")
+    }
+
+    @Test("Xcode options on a Swift package are a usage error")
+    func xcodeOptionsOnAPackage() throws {
+        let (package, scratch) = try fixture("Clean")
+        defer { #expect(throws: Never.self) { try FileManager.default.removeItem(at: scratch) } }
+        let result = try run(["--scheme", "Clean"], in: package)
+        #expect(result.status == 2)
+        #expect(result.error.contains("Xcode options apply to an Xcode project"))
+        let none = try run([], in: scratch)
+        #expect(none.status == 2)
+        #expect(none.error.contains("not a Swift package (no Package.swift) nor an Xcode project or workspace"))
+    }
 }

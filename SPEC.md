@@ -14,7 +14,7 @@ as those of [deslop-please](https://github.com/deterministic-machines/deslop-ple
 | R1 | deslop detects what a general linter cannot: mistakes seen only across files, through what code refers to. What one file's syntax shows (naming, `try?`, formatting) is a general linter's, such as swift-format's, and no lint here repeats it. |
 | R2 | The lints read only the language-neutral model (§2). No lint knows a language, a file extension, or a toolchain. Their definitions are §3 and the tests that state them. |
 | R3 | The model has a versioned JSON form. Any frontend, in any language, can produce it; `deslop check --model <file>` lints it. |
-| R4 | The Swift frontend (§4) builds the model of a SwiftPM package from its package description, the compiler's IndexStore and the source text. |
+| R4 | The Swift frontend (§4) builds the model of a SwiftPM package, or of an Xcode project or workspace, from its description, the compiler's IndexStore and the source text. |
 | R5 | The CLI (§5) works as a lint: exit 0 when clean, 1 when it reports, 2 when it cannot run. An allowlist suppresses existing debt; new diagnostics still fail. |
 | R6 | Failures are explicit. A model that breaks §2's invariants, a missing index, a missing libIndexStore or a failed build is a typed error with exit 2, never an empty or partial model reported as clean. |
 
@@ -89,13 +89,32 @@ Known limits:
 
 - A key path stored in a property, returned, or put in a collection is not followed further, and is taken for a read of its field. Marked `FIXME(INCOMPLETE_IMPLEMENTATION)` where it is decided.
 
+### 4.1 Xcode projects
+
+The same model, from an Xcode project or workspace:
+
+| Model | Xcode |
+|---|---|
+| package node | a native target of the project (or of each project of the workspace), and a module compiled from a local package below the root; unit-test and UI-test targets are test nodes |
+| a target's root | its first file-system-synchronized folder; for a target of listed files, the directory all its compiled files share |
+| module node | a directory below a target's root; a file outside its target's root is the target's own |
+| file | each Swift file a built target compiled, as the index records it; for a target not built (a test target), the Swift files the project lists for it, which count for layout only |
+
+Which files a target compiles is told by the index's units (module name and main file), not by the project's file lists, so file-system-synchronized folders and their exceptions are honoured as the build honours them. Files under the derived data directory (generated sources, package checkouts) are not the project's.
+
+The build: every scheme `xcodebuild -list` names that the project or workspace defines (a scheme file under it, or a scheme named after one of its targets), or those `--scheme` names, is built in turn into one derived data directory, `.build/deslop/xcode`, with `COMPILER_INDEX_STORE_ENABLE=YES`, code signing off, and only the running Mac's architecture. A scheme builds for macOS when every target in it supports macOS, else for the iOS Simulator, else for the one simulator they all support; `--destination` names another. `xcodebuild` and libIndexStore are Xcode's: `TOOLCHAINS` is not passed on, unless `--toolchain` names one. A failed build, a scheme that cannot build, or a non-test target that no built scheme compiled (when no `--scheme` is given) is an error.
+
 ## 5. CLI (`deslop`)
 
 ```
-deslop [<target-or-module>] [--allow <path> | --update-allow <path>] [--package-path <dir>] [--skip-build]
-deslop model [--package-path <dir>] [--skip-build] [--output <path>]
+deslop [<target-or-module>] [--allow <path> | --update-allow <path>] [--package-path <dir>] [--skip-build] [<xcode options>]
+deslop model [--package-path <dir>] [--skip-build] [--output <path>] [<xcode options>]
 deslop check --model <path> [<package-or-module>] [--allow <path> | --update-allow <path>]
+
+xcode options: [--project <path> | --workspace <path>] [--scheme <name>]... [--destination <spec>] [--toolchain <id>]
 ```
+
+The directory is a SwiftPM package when it has a `Package.swift` and neither `--project` nor `--workspace` is given; else the one workspace, or else the one project, at its top level. None, or more than one, is an error that names what to pass.
 
 A run scoped to a target or module judges only its scope: `--allow` counts an entry as fixed only when nothing reports it anywhere, and `--update-allow` keeps the existing entries that still allow something reported outside the scope.
 
@@ -108,6 +127,7 @@ Output is a compiler-style report; the last line is `deslop: ok` or `deslop: N e
 | A1 | Each lint reports what §3 defines, and only that, on models of every shape §2 allows; a picture of any length is drawn. | `DeslopCoreTests`, on Rust-flavored models (separator `::`), which also shows no lint knows Swift |
 | A2 | The JSON model round-trips and invalid models are rejected with the broken invariant named. | `DeslopModelTests` |
 | A3 | The Swift frontend reports a field leak (and its getter variant), its fix, a module cycle and its fix, a tangle across modules, a shallow module, a clean package, and test code left out; and types inferred from initial values, tuple patterns, files with a byte order mark, and a stale index as §4 says. | `DeslopSwiftTests` end-to-end on `Fixtures/` and on packages the tests write |
+| A6 | The Xcode frontend builds an Xcode project with a file-system-synchronized target and a test target, reports the same lints on it as on a package, leaves test code out, and fails explicitly on a build error or a target no scheme built. | `DeslopSwiftTests` on `Fixtures/Xcode` |
 | A4 | The CLI's exit codes, allowlist (CRLF included, fixed entries counted across scopes) and `check --model` behave as §5 says. | `DeslopTests`, `DeslopCoreTests` |
 | A5 | `deslop` runs clean on its own source with no allowlist. | running it on this package |
 

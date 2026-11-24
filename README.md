@@ -13,6 +13,7 @@ deslop                                # lint the Swift package in the current di
 deslop MyTarget.Store                 # only what concerns one target or module
 deslop --update-allow .deslop.allow   # record existing debt
 deslop --allow .deslop.allow          # new errors still fail
+deslop --scheme App                   # an Xcode project or workspace: only scheme App
 deslop model --output model.json      # the package's model, as JSON
 deslop check --model model.json       # lint any frontend's model
 ```
@@ -28,8 +29,13 @@ Exit status: `0` nothing reported, `1` reports, `2` cannot run.
 | `wide-directory` | a directory of more than 15 source files and directories |
 | `long-file` | a file of more than 2,000 lines |
 
-In Swift, a target is a package and each directory below a target's root is a
-module. See [SPEC.md](SPEC.md) for the model contract, the lints' definitions,
+It checks a SwiftPM package, or an Xcode project or workspace: in a directory
+with a `Package.swift` it builds the package; otherwise it builds every scheme
+of the workspace or project there with Xcode's toolchain, for macOS or else the
+iOS Simulator (`--scheme`, `--destination`, `--toolchain` and `--project` /
+`--workspace` choose otherwise). Its builds go to `.build/deslop`, apart from
+your own. In Swift, a target is a package and each directory below a target's
+root is a module. See [SPEC.md](SPEC.md) for the model contract, the lints' definitions,
 and how Swift maps onto them.
 
 ## Layout

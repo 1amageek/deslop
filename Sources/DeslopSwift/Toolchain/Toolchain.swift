@@ -8,7 +8,8 @@ struct Toolchain: Sendable {
     /// libIndexStore of the toolchain whose compiler writes the index: next to
     /// its runtime resources, `<toolchain>/usr/lib`. `DESLOP_LIBINDEXSTORE`
     /// names another.
-    func indexStoreLibrary() throws(FrontendError) -> URL {
+    /// `swift`, as `prefix` runs it: `["swift"]` from the path, `["xcrun", "swift"]` as Xcode's.
+    func indexStoreLibrary(swift prefix: [String] = ["swift"], environment: [String: String]? = nil) throws(FrontendError) -> URL {
         if let override = ProcessInfo.processInfo.environment["DESLOP_LIBINDEXSTORE"], !override.isEmpty {
             return URL(fileURLWithPath: override)
         }
@@ -16,7 +17,7 @@ struct Toolchain: Sendable {
             struct Paths: Decodable { let runtimeResourcePath: String }
             let paths: Paths
         }
-        let data = try runner.run(["swift", "-print-target-info"])
+        let data = try runner.run(prefix + ["-print-target-info"], environment: environment)
         let info: TargetInfo
         do {
             info = try JSONDecoder().decode(TargetInfo.self, from: data)

@@ -10,10 +10,25 @@ enum Invocation: Equatable {
         var updateAllow: String?
     }
 
-    /// Lint the Swift package at `packagePath`.
-    case lintPackage(packagePath: String, buildsIndex: Bool, reporting: Reporting)
-    /// Write the model of the Swift package at `packagePath`.
-    case exportModel(packagePath: String, buildsIndex: Bool, output: String?)
+    /// What to build and read: a SwiftPM package, or an Xcode project or workspace.
+    struct Source: Equatable {
+        /// The directory it is in.
+        var path: String = "."
+        var buildsIndex: Bool = true
+        var project: String?
+        var workspace: String?
+        var schemes: [String] = []
+        var destination: String?
+        var toolchain: String?
+
+        /// Whether an Xcode option names what to build.
+        var namesXcode: Bool { project != nil || workspace != nil }
+    }
+
+    /// Lint the Swift package or Xcode project `source` describes.
+    case lintPackage(source: Source, reporting: Reporting)
+    /// Write the model of the Swift package or Xcode project `source` describes.
+    case exportModel(source: Source, output: String?)
     /// Lint a model file, written by any language's frontend.
     case checkModel(modelPath: String, reporting: Reporting)
     case help

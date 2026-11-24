@@ -60,6 +60,25 @@ struct IndexStoreReader {
         return Read(files: result, systemProtocols: protocols)
     }
 
+    /// Each file a non-system unit compiled, absolute with symbolic links
+    /// resolved, with the module it was compiled into; a file compiled into
+    /// several modules is listed with each.
+    func compiledFiles() throws(FrontendError) -> [(module: String, file: String)] {
+        let handle = try library.openStore(at: store.path)
+        defer { library.close(handle) }
+        var found: Set<String> = []
+        var compiled: [(module: String, file: String)] = []
+        for name in library.unitNames(in: handle) {
+            let unit = try library.unit(name, in: handle)
+            guard !unit.isSystem, let mainFile = unit.mainFile else { continue }
+            let file = IndexStoreReader.canonical(mainFile)
+            if found.insert(unit.moduleName + "\u{0}" + file).inserted {
+                compiled.append((unit.moduleName, file))
+            }
+        }
+        return compiled
+    }
+
     /// `path`, absolute, with symbolic links resolved: how files are compared.
     static func canonical(_ path: String) -> String {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path

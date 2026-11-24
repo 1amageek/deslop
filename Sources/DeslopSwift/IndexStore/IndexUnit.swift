@@ -29,6 +29,8 @@ struct IndexUnit: Sendable {
     }
 
     let isSystem: Bool
+    /// The module it compiled the file into: the target's module name.
+    let moduleName: String
     /// The file it compiled, if it compiled one.
     let mainFile: String?
     let modified: Time
