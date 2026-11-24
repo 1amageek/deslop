@@ -9,11 +9,14 @@ struct CommandRunner: Sendable {
     }
 
     /// Runs `arguments` through `/usr/bin/env`, in `directory`. A command that
-    /// cannot start, or exits other than 0, is a failure.
+    /// cannot start, or exits other than 0, is a failure, which carries what
+    /// it printed to both its output and its error: some tools print why they
+    /// failed to their output when it is not a terminal, as swiftly does.
     func run(_ arguments: [String], in directory: URL? = nil, environment: [String: String]? = nil) throws(FrontendError) -> Data {
         let output = try runAllowingFailure(arguments, in: directory, environment: environment)
         guard output.status == 0 else {
-            throw .commandFailed(command: arguments.joined(separator: " "), status: output.status, output: output.standardError)
+            let printed = String(decoding: output.standardOutput, as: UTF8.self) + output.standardError
+            throw .commandFailed(command: arguments.joined(separator: " "), status: output.status, output: printed)
         }
         return output.standardOutput
     }
