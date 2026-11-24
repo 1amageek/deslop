@@ -324,6 +324,41 @@ struct FrontendFidelityTests {
         ])
     }
 
+    @Test("a key path a generic function hands back is followed to what is done with it")
+    func keyPathHandedBack() throws {
+        let package = try TemporaryPackage(sources: [
+            "Store/Queue.swift": """
+                public struct Queue {
+                    var generic: [Int] = []
+                    var wrapped: [Int] = []
+                    var rank: Int = 0
+                    var readBack: [Int] = []
+                    var kept: [Int] = []
+                    private var head: Int = 0
+                    public init() {}
+                    public mutating func pop() -> Int? { head += 1; return kept.first }
+                }
+                """,
+            "Client/User.swift": """
+                import Foundation
+                public func id<T>(_ x: T) -> T { x }
+                public func generic(_ q: inout Queue) {
+                    let p = id(\\Queue.generic)
+                    q[keyPath: p] = []
+                }
+                public func wrapped(_ q: inout Queue) {
+                    let p = Optional.some(\\Queue.wrapped)
+                    q[keyPath: p!] = []
+                }
+                public func ranked(_ qs: [Queue]) -> [Queue] { qs.sorted(using: KeyPathComparator(\\Queue.rank)) }
+                public func readBack(_ q: Queue) -> [Int] { q[keyPath: id(\\Queue.readBack)] }
+                """,
+        ])
+        defer { clean(package) }
+        let found = try keys(package)
+        #expect(found == ["field-leak Lib.Store.Queue.generic", "field-leak Lib.Store.Queue.wrapped"])
+    }
+
     @Test("an overload that shares a requirement's name but not its signature does not implement it")
     func overloadIsNoWitness() throws {
         let package = try TemporaryPackage(sources: [

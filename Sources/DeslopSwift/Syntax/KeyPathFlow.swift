@@ -18,7 +18,9 @@ import SwiftSyntax
 ///   function or closure: what is done with what it returns;
 /// - put in an array, dictionary or tuple, in parentheses, in a branch of a
 ///   conditional or of an `if` or `switch` expression, on either side of `??`,
-///   or cast to a writable key path: what is done with the whole;
+///   unwrapped, or cast to a writable key path: what is done with the whole;
+/// - passed to what may hand it back, as its signature says: what is done
+///   with what the call returns;
 /// - cast to any other type, compared, matched against, interpolated, or
 ///   discarded: a read; what holds it, assigned to: nothing is done with it.
 ///
@@ -51,6 +53,9 @@ struct KeyPathFlow {
         if let element = parent.as(LabeledExprSyntax.self), let list = element.parent?.as(LabeledExprListSyntax.self) {
             return argument(element, in: list, steps: steps)
         }
+        if parent.is(ForceUnwrapExprSyntax.self) || parent.is(OptionalChainingExprSyntax.self) {
+            return next(parent)
+        }
         if parent.is(ArrayElementSyntax.self) || parent.is(DictionaryElementSyntax.self) {
             guard let collection = parent.parent?.parent else { return .reach }
             return next(collection)
@@ -78,11 +83,11 @@ struct KeyPathFlow {
             // what it returns; one passed as a trailing closure goes to the
             // function called.
             if call.calledExpression.id == value.id { return next(Syntax(call)) }
-            return callee(call)
+            return trailing(call, steps: steps)
         }
         if parent.is(MultipleTrailingClosureElementSyntax.self),
            let call = parent.parent?.parent?.as(FunctionCallExprSyntax.self) {
-            return callee(call)
+            return trailing(call, steps: steps)
         }
         if let loop = parent.as(ForStmtSyntax.self), loop.sequence.id == value.id {
             guard let name = loop.pattern.as(IdentifierPatternSyntax.self)?.identifier.text else { return .reach }
@@ -104,6 +109,12 @@ struct KeyPathFlow {
         if holder.is(TupleExprSyntax.self) {
             return use(of: holder, steps: steps + 1)
         }
+        let labels = list.map { $0.label?.text }
+        let passed = Passed(
+            index: list.firstIndex { $0.id == element.id }.map { list.distance(from: list.startIndex, to: $0) } ?? 0,
+            labels: labels,
+            closure: element.expression.is(ClosureExprSyntax.self)
+        )
         if let subscripted = holder.as(SubscriptCallExprSyntax.self) {
             if element.label?.text == "keyPath" {
                 // The index marks no write at a key path's component, so a
@@ -112,20 +123,22 @@ struct KeyPathFlow {
                 let reached = syntax.access(of: Syntax(subscripted), facts: facts)
                 return reached == .call || reached == .subscripted ? .reach : reached
             }
-            return signature(at: subscripted.leftSquare)
+            return passedOn(passed, to: subscripted.leftSquare, call: Syntax(subscripted), steps: steps)
         }
         if let call = holder.as(FunctionCallExprSyntax.self) {
-            return callee(call)
+            guard let name = KeyPathFlow.calleeName(call) else { return .reach }
+            return passedOn(passed, to: name, call: Syntax(call), steps: steps)
         }
         if let macro = holder.as(MacroExpansionExprSyntax.self) {
-            return signature(at: macro.macroName)
+            return passedOn(passed, to: macro.macroName, call: Syntax(macro), steps: steps)
         }
         if let attribute = holder.as(AttributeSyntax.self) {
-            if let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name
-                ?? attribute.attributeName.as(MemberTypeSyntax.self)?.name {
-                return signature(at: name)
-            }
-            return .reach
+            // What an attribute's initializer makes is the wrapper of the
+            // declaration it is written on, which holds nothing the code
+            // names as a value: nothing comes back.
+            guard let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name
+                ?? attribute.attributeName.as(MemberTypeSyntax.self)?.name else { return .reach }
+            return passedOn(passed, to: name, call: nil, steps: steps)
         }
         if holder.is(ExpressionSegmentSyntax.self) {
             return .copy
@@ -133,26 +146,46 @@ struct KeyPathFlow {
         return .reach
     }
 
-    /// What the function `call` calls does with a value passed to it.
-    private func callee(_ call: FunctionCallExprSyntax) -> Access {
-        var called = call.calledExpression
-        if let specialized = called.as(GenericSpecializationExprSyntax.self) { called = specialized.expression }
-        if let name = called.as(DeclReferenceExprSyntax.self)?.baseName
-            ?? called.as(MemberAccessExprSyntax.self)?.declName.baseName {
-            return signature(at: name)
-        }
-        return .reach
+    /// What is done with a closure passed after the parentheses of `call`.
+    private func trailing(_ call: FunctionCallExprSyntax, steps: Int) -> Access {
+        guard let name = KeyPathFlow.calleeName(call) else { return .reach }
+        return passedOn(.trailingClosure, to: name, call: Syntax(call), steps: steps)
     }
 
-    /// What the declaration the index names at `token` does with a key path
-    /// passed to it, as its signature declares.
-    private func signature(at token: TokenSyntax) -> Access {
-        switch facts.keyPathSignature(syntax.position(token)) {
-        case .readOnly:
-            return .copy
-        case .writable, .unknown, nil:
-            return .reach
+    /// How a value is passed: as which of a call's arguments, and whether it
+    /// is a closure, whose result is what it hands on.
+    private struct Passed {
+        let index: Int
+        let labels: [String?]
+        let closure: Bool
+
+        static let trailingClosure = Passed(index: -1, labels: [], closure: true)
+    }
+
+    /// What is done with a value passed to the declaration the index names
+    /// at `token`: a write where its signature declares a writable key path,
+    /// or is not known; where it may hand the value back in what `call`
+    /// returns, what is done with that; else a read.
+    private func passedOn(_ passed: Passed, to token: TokenSyntax, call: Syntax?, steps: Int) -> Access {
+        guard let signatures = facts.signatures(syntax.position(token)), !signatures.isEmpty,
+              signatures.allSatisfy({ $0.keyPaths == .readOnly }) else { return .reach }
+        let returns = signatures.contains { signature in
+            passed.index < 0
+                ? signature.mayReturnFromTrailingClosure()
+                : signature.mayReturn(argument: passed.index, of: passed.labels, closure: passed.closure)
         }
+        guard returns else { return .copy }
+        guard let call else { return .copy }
+        return use(of: call, steps: steps + 1)
+    }
+
+    /// The name a call names: `write` for `write(&q, \.items)`,
+    /// `q.write(\.items)` and `write<Q>(\.items)`.
+    private static func calleeName(_ call: FunctionCallExprSyntax) -> TokenSyntax? {
+        var called = call.calledExpression
+        if let specialized = called.as(GenericSpecializationExprSyntax.self) { called = specialized.expression }
+        return called.as(DeclReferenceExprSyntax.self)?.baseName
+            ?? called.as(MemberAccessExprSyntax.self)?.declName.baseName
     }
 
     /// What is done with a value a pattern binding binds.
@@ -256,15 +289,23 @@ struct KeyPathFlow {
                 // What is assigned to hands nothing on: its value is replaced.
                 return at == 2 ? assigned(to: elements[0], in: sequence, steps: steps) : .copy
             }
+            if let binary = operation.as(BinaryOperatorExprSyntax.self) {
+                let passed = Passed(index: at == 0 ? 0 : 1, labels: [nil, nil], closure: false)
+                return passedOn(passed, to: binary.operator, call: sequence, steps: steps)
+            }
         }
         // Compared or combined by operators that each take no writable key
-        // path: `path == \.items`, `a == \.x || b == \.y`.
-        let neighbours = [at - 1, at + 1].filter(elements.indices.contains).map { elements[$0] }
-        let readOnly = neighbours.allSatisfy { neighbour in
-            guard let binary = neighbour.as(BinaryOperatorExprSyntax.self), binary.operator.text != "??" else { return false }
-            return facts.keyPathSignature(syntax.position(binary.operator)) == .readOnly
+        // path and hand back none: `a == \.x || b == \.y`.
+        // An operator after the value takes it as its left operand, one before as its right.
+        let neighbours = [(at + 1, 0), (at - 1, 1)].filter { elements.indices.contains($0.0) }
+        let read = neighbours.allSatisfy { index, side in
+            guard let binary = elements[index].as(BinaryOperatorExprSyntax.self), binary.operator.text != "??",
+                  let signatures = facts.signatures(syntax.position(binary.operator)), !signatures.isEmpty else { return false }
+            return signatures.allSatisfy { signature in
+                signature.keyPaths == .readOnly && !signature.mayReturn(argument: side, of: [nil, nil], closure: false)
+            }
         }
-        return readOnly ? .copy : .reach
+        return read ? .copy : .reach
     }
 
     /// What is done with a value assigned to `target`.

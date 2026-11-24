@@ -90,12 +90,12 @@ A key path is followed from where it is written to where its value goes; what is
 | Where the value goes | What it does |
 |---|---|
 | applied in a `[keyPath:]` subscript | what is done there with the field; a member reached on it → no |
-| passed to a function, subscript, initializer, attribute, macro or operator | no, when the signature of what it is passed to declares a `WritableKeyPath` or `ReferenceWritableKeyPath`, or is not one the index names; else yes. The signature is the index's USR of it, demangled by the Swift runtime: a mangling writes a repeated word as a back reference, so its text cannot be searched |
+| passed to a function, subscript, initializer, attribute, macro or operator | no, when the signature of what it is passed to declares a `WritableKeyPath` or `ReferenceWritableKeyPath`, or is not one the index names; else, when the signature's result names the type of the parameter it is passed for (for a closure, the parameter's result), as `id<A>(A) -> A` does, what is done with what the call returns; else yes. An argument goes to the next parameter of its label, a trailing closure to the last of a function type; a parameter the signature does not show may hand it back. The signature is the index's USR of it, demangled by the Swift runtime: a mangling writes a repeated word as a back reference, so its text cannot be searched |
 | bound or assigned to a local | what each use that may see it does: those after it in the code that declares the local, any in a loop around the assignment; a tuple target, each of its elements |
 | iterated by `for` | what each use of the loop's name does |
 | stored in, assigned to or returned from a property, function or subscript the index names | yes, when its USR declares no writable key path; else what every place in the workspace that names it does with its value, those the index marks as writes included: it marks applying a key path to mutate as a write of what holds it. A use that leads back to one being followed adds nothing |
 | returned from a local function or closure | what is done with what it returns; a closure whose written result declares no writable key path → yes |
-| in an array, dictionary, tuple or parentheses, a branch of `?:`, `if` or `switch`, either side of `??`, or cast to a writable key path | what is done with the whole |
+| in an array, dictionary, tuple or parentheses, a branch of `?:`, `if` or `switch`, either side of `??`, unwrapped (`!`, `?`), or cast to a writable key path | what is done with the whole |
 | cast to another type, compared or combined by operators whose signatures declare no writable key path, matched by a `case`, interpolated, discarded | yes |
 | what holds it, assigned to | nothing is done with it |
 | anywhere else | no: it may be written through |

@@ -8,13 +8,16 @@ import Testing
 @Suite("key path flow")
 struct KeyPathFlowTests {
     /// What the code of `body` does with `field`, which the first key path
-    /// `\Q.<field>` in it names. Names in `readOnly` declare no writable key
-    /// path, those in `writable` declare one; the index names nothing else.
+    /// `\Q.<field>` in it names. The index names what `signatures` gives a
+    /// demangled signature for; names in `readOnly` take two values and hand
+    /// back none, those in `writable` take a writable key path; it names
+    /// nothing else.
     private func access(
         _ body: String,
         _ field: String = "items",
         readOnly: Set<String> = [],
-        writable: Set<String> = []
+        writable: Set<String> = [],
+        signatures: [String: String] = [:]
     ) throws -> Access {
         let text = "func f() {\n\(body)\n}\n"
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -25,14 +28,16 @@ struct KeyPathFlowTests {
         let name = { (at: SourcePosition) -> String in
             String(lines[at.line - 1].utf8.dropFirst(at.column - 1).prefix { byte in
                 byte != UInt8(ascii: " ") && byte != UInt8(ascii: "(") && byte != UInt8(ascii: ")")
+                    && byte != UInt8(ascii: "{")
             }) ?? ""
         }
         let facts = NameFacts(
             isField: { _ in false },
-            keyPathSignature: { at in
+            signatures: { at in
                 let named = name(at)
-                if writable.contains(named) { return .writable }
-                return readOnly.contains(named) ? .readOnly : nil
+                if let text = signatures[named] { return [Signature(text: text)] }
+                if writable.contains(named) { return [Signature(text: "main.\(named)(Swift.WritableKeyPath<A, B>) -> ()")] }
+                return readOnly.contains(named) ? [Signature(text: "main.\(named)(Any, Any) -> ()")] : nil
             },
             keyPathFlow: { _ in nil }
         )
@@ -75,6 +80,20 @@ struct KeyPathFlowTests {
         #expect(try access("func g(p: inout KeyPath<Q, [Int]>) { p = \\Q.items }") == .reach)
         #expect(try access("var p = \\Q.other\nvar o = p\n(p, o) = (\\Q.items, p)\nlet n = q[keyPath: o]") == .copy)
         #expect(try access("var p = \\Q.other\nvar o = p\n(p, o) = (\\Q.items, p)\nq[keyPath: o] = []") == .reach)
+    }
+
+    @Test("a key path a function may hand back is what is done with what it returns")
+    func handedBack() throws {
+        let id = ["id": "main.id<A>(A) -> A"]
+        #expect(try access("let p = id(\\Q.items)\nq[keyPath: p] = []", signatures: id) == .reach)
+        #expect(try access("let p = id(\\Q.items)\nlet n = q[keyPath: p]", signatures: id) == .copy)
+        let pass = ["pass": "main.pass(_: Swift.KeyPath<main.Q, [Swift.Int]>, flag: Swift.Bool) -> Swift.KeyPath<main.Q, [Swift.Int]>"]
+        #expect(try access("let n = q[keyPath: pass(\\Q.items, flag: true)]", signatures: pass) == .copy)
+        #expect(try access("let names = map(\\Q.items)", signatures: ["map": "main.map<A>((main.Q) -> A) -> [A]"]) == .copy)
+        let make = ["make": "main.make<A>(_: () -> A) -> [A]"]
+        #expect(try access("let all = make { \\Q.items }\nall.forEach { _ in }", signatures: make) == .reach)
+        #expect(try access("make { \\Q.items }", signatures: make) == .copy)
+        #expect(try access("let p = given + \\Q.items\nq[keyPath: p] = []", signatures: ["+": "static main.+ infix(A, A) -> A"]) == .reach)
     }
 
     @Test("a key path a local function or closure returns is what is done with what it returns")

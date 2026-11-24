@@ -10,7 +10,9 @@ final class NameIndex {
     private let usrOfItem: [ItemID: String]
     private let itemAtSite: [Site: ItemID]
     private let namedAt: [Site: [ItemID]]
-    private let signatures: [Site: KeyPathSignature]
+    private let symbolsAt: [Site: [String]]
+    /// By USR, its signature, once read.
+    private var signatureOfUSR: [String: Signature] = [:]
     /// By item, the places that name it: where its value is used, or set.
     private let usesOfItem: [ItemID: [Site]]
     private let syntaxOfFile: [FileID: SourceSyntax]
@@ -27,7 +29,7 @@ final class NameIndex {
         usrOfItem: [ItemID: String],
         itemAtSite: [Site: ItemID],
         namedAt: [Site: [ItemID]],
-        signatures: [Site: KeyPathSignature],
+        symbolsAt: [Site: [String]],
         usesOfItem: [ItemID: [Site]],
         syntaxOfFile: [FileID: SourceSyntax]
     ) {
@@ -35,7 +37,7 @@ final class NameIndex {
         self.usrOfItem = usrOfItem
         self.itemAtSite = itemAtSite
         self.namedAt = namedAt
-        self.signatures = signatures
+        self.symbolsAt = symbolsAt
         self.usesOfItem = usesOfItem
         self.syntaxOfFile = syntaxOfFile
     }
@@ -46,8 +48,8 @@ final class NameIndex {
             isField: { [self] position in
                 (namedAt[Site(file: file, position: position)] ?? []).contains { items[$0.index].kind == .field }
             },
-            keyPathSignature: { [self] position in
-                signatures[Site(file: file, position: position)]
+            signatures: { [self] position in
+                symbolsAt[Site(file: file, position: position)].map { $0.map(signature) }
             },
             keyPathFlow: { [self] position in
                 let site = Site(file: file, position: position)
@@ -56,6 +58,13 @@ final class NameIndex {
                 return named.map(flow).max()
             }
         )
+    }
+
+    private func signature(of usr: String) -> Signature {
+        if let known = signatureOfUSR[usr] { return known }
+        let read = Signature(usr: usr)
+        signatureOfUSR[usr] = read
+        return read
     }
 
     /// What the code that uses `item` does with a key path it holds or
@@ -67,7 +76,7 @@ final class NameIndex {
             metUnfinished = true
             return .copy
         }
-        guard let usr = usrOfItem[item], KeyPathSignature(usr: usr) != .readOnly else {
+        guard let usr = usrOfItem[item], signature(of: usr).keyPaths != .readOnly else {
             flows[item] = .copy
             return .copy
         }

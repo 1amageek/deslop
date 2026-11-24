@@ -37,9 +37,9 @@ struct ModelBuilder {
     private var typeSites: Set<Site> = []
     /// Where the index names a struct or an enum: a value type.
     private var valueTypeSites: Set<Site> = []
-    /// Where the index names something, of the workspace or not, what its
-    /// signature declares of key paths, as its USR says.
-    private var keyPathSignatures: [Site: KeyPathSignature] = [:]
+    /// Where the index names something other than a type, of the workspace
+    /// or not, the USRs of what it names there, which say their signatures.
+    private var symbolsAt: [Site: [String]] = [:]
     /// By function, its USR, which says its signature.
     private var usrOfItem: [ItemID: String] = [:]
     /// By reference: where it is, and whether the index says it writes.
@@ -58,8 +58,7 @@ struct ModelBuilder {
 
     /// The model, built.
     consuming func build() -> Model {
-        var signatureOfUSR: [String: KeyPathSignature] = [:]
-        for source in sources { addTypeSites(source, signatureOfUSR: &signatureOfUSR) }
+        for source in sources { addTypeSites(source) }
         for source in sources { addDefinitions(source) }
         markWitnesses()
         resolveInheritance()
@@ -75,15 +74,12 @@ struct ModelBuilder {
 
     // MARK: - Items
 
-    private mutating func addTypeSites(_ source: Source, signatureOfUSR: inout [String: KeyPathSignature]) {
+    private mutating func addTypeSites(_ source: Source) {
         let types: Set<IndexSymbol.Kind> = [.struct, .class, .enum, .protocol, .union, .typeAlias]
         for occurrence in source.occurrences
         where occurrence.roles.contains(.reference) && !types.contains(occurrence.symbol.kind) {
-            let usr = occurrence.symbol.usr
-            let signature = signatureOfUSR[usr] ?? KeyPathSignature(usr: usr)
-            signatureOfUSR[usr] = signature
             let site = Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column))
-            keyPathSignatures[site] = max(keyPathSignatures[site] ?? .readOnly, signature)
+            symbolsAt[site, default: []].append(occurrence.symbol.usr)
         }
         for occurrence in source.occurrences
         where occurrence.roles.contains(.reference) && types.contains(occurrence.symbol.kind)
@@ -322,7 +318,7 @@ struct ModelBuilder {
             usrOfItem: usrOfItem,
             itemAtSite: itemAtSite,
             namedAt: namedAt,
-            signatures: keyPathSignatures,
+            symbolsAt: symbolsAt,
             usesOfItem: usesOfItem,
             syntaxOfFile: syntaxOfFile
         )
