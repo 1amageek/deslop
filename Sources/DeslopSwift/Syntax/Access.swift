@@ -1,6 +1,6 @@
 /// What code does with a field, or with what an accessor lends, at the
 /// place that names it.
-enum Access: Sendable, Equatable {
+enum Access: Int, Sendable, Comparable {
     /// Uses its value: `queue.head + 1`, `return queue.head`, `f(queue.head)`.
     case copy
     /// Lends a view of it to read: `queue.name.utf8`.
@@ -10,4 +10,9 @@ enum Access: Sendable, Equatable {
     /// Writes it, passes it `inout`, or subscripts it: `queue.head = 0`,
     /// `swap(&queue.head, &other)`, `queue.items[0]`.
     case reach
+
+    /// Least to most: what a place does at most, when it is used in more than one way.
+    static func < (lhs: Access, rhs: Access) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
 }

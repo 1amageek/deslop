@@ -220,4 +220,67 @@ struct FrontendFidelityTests {
         defer { clean(package) }
         #expect(try keys(package) == ["field-leak Lib.Store.Queue.items"])
     }
+
+    @Test("a key path is followed to the subscript that uses it, or to the function it is passed to")
+    func keyPathFollowed() throws {
+        let queue = """
+            public struct Queue {
+                var items: [Int] = []
+                var marks: [Int] = []
+                var tags: [Int] = []
+                var label: String = ""
+                var kept: [Int] = []
+                private var head: Int = 0
+                public init() {}
+                public mutating func pop() -> Int? { head += 1; return kept.first }
+            }
+            public func write(_ q: inout Queue, _ path: WritableKeyPath<Queue, [Int]>) { q[keyPath: path] = [] }
+            public func read(_ q: Queue, _ path: KeyPath<Queue, [Int]>) -> [Int] { q[keyPath: path] }
+            """
+        let package = try TemporaryPackage(sources: [
+            "Store/Queue.swift": queue,
+            "Client/User.swift": """
+                public func direct(_ q: inout Queue) { q[keyPath: \\.items].removeAll() }
+                public func bound(_ q: inout Queue) {
+                    let path = \\Queue.marks
+                    q[keyPath: path].append(1)
+                }
+                public func passed(_ q: inout Queue) { write(&q, \\.tags) }
+                public func onlyRead(_ q: Queue) -> ([Int], [Int], String) {
+                    let path = \\Queue.kept
+                    return (read(q, \\.kept), q[keyPath: path], q[keyPath: \\.label])
+                }
+                """,
+        ])
+        defer { clean(package) }
+        let found = try keys(package)
+        #expect(found == [
+            "field-leak Lib.Store.Queue.items", "field-leak Lib.Store.Queue.marks", "field-leak Lib.Store.Queue.tags",
+        ])
+    }
+
+    @Test("an overload that shares a requirement's name but not its signature does not implement it")
+    func overloadIsNoWitness() throws {
+        let package = try TemporaryPackage(sources: [
+            "Steps/Steps.swift": "public protocol Steps {\n    func scale(_ by: Int) -> Int\n    static func make() -> Self\n}\n",
+            "Machine/Machine.swift": """
+                public struct Machine {
+                    public init() {}
+                    public func scale(_ by: Int) -> Int { by }
+                    public func scale(_ by: Double) -> Double { by }
+                    public static func make() -> Machine { Machine() }
+                }
+                extension Machine: Steps {}
+                """,
+        ])
+        defer { clean(package) }
+        let model = try PackageFrontend(packageRoot: package.directory).model()
+        let witnesses = model.items.filter { $0.implementsInterface }.map(\.name)
+        // Both are `scale(_:)`; only the one of the requirement's signature implements it.
+        #expect(witnesses.filter { $0 == "Machine.scale(_:)" }.count == 1)
+        let intScale = model.items.firstIndex { $0.name == "Machine.scale(_:)" }
+        #expect(intScale.map { model.items[$0].implementsInterface } == true)
+        // `make()` returns `Self` in the protocol, `Machine` here: told by being the only `make`.
+        #expect(witnesses.contains("Machine.make()"))
+    }
 }

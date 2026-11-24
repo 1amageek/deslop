@@ -59,26 +59,26 @@ final class SourceSyntax {
     }
 
     /// What the code does with the field or property it names at `position`.
-    /// `isField` tells whether a member named at a position is a stored
+    /// `facts` tells whether a member named at a position is a stored
     /// field, through which the place goes on: `queue.inner.items.count`
     /// reaches into `inner` as it does into `items`.
-    func access(at position: SourcePosition, isField: (SourcePosition) -> Bool) -> Access {
+    func access(at position: SourcePosition, facts: NameFacts) -> Access {
         guard tokens[position] != nil else { return .reach }
         // A name that is no expression, such as an argument label of a
         // memberwise initializer, gives or takes the value whole.
         guard let place = place(at: position) else { return .copy }
-        return access(of: place, isField: isField)
+        return access(of: place, facts: facts)
     }
 
     /// What the code does with what the method it calls at `position` hands
-    /// out, as `access(at:isField:)` reads a field: `queue.head().count`
+    /// out, as `access(at:facts:)` reads a field: `queue.head().count`
     /// reaches into what `head()` lends. A method not called where it is
     /// named, but passed on, reaches.
-    func callAccess(at position: SourcePosition, isField: (SourcePosition) -> Bool) -> Access {
+    func callAccess(at position: SourcePosition, facts: NameFacts) -> Access {
         guard let place = place(at: position),
               let call = place.parent?.as(FunctionCallExprSyntax.self),
               call.calledExpression.id == place.id else { return .reach }
-        return access(of: Syntax(call), isField: isField)
+        return access(of: Syntax(call), facts: facts)
     }
 
     /// The expression that is the place named at `position`: `queue.head`
@@ -93,7 +93,7 @@ final class SourceSyntax {
         return Syntax(reference)
     }
 
-    private func access(of place: Syntax, isField: (SourcePosition) -> Bool) -> Access {
+    private func access(of place: Syntax, facts: NameFacts) -> Access {
         var current = place
         while let parent = current.parent {
             if let chained = parent.as(OptionalChainingExprSyntax.self), chained.expression.id == current.id {
@@ -111,7 +111,7 @@ final class SourceSyntax {
                 continue
             }
             if let member = parent.as(MemberAccessExprSyntax.self), member.base?.id == current.id {
-                if isField(position(member.declName.baseName)) {
+                if facts.isField(position(member.declName.baseName)) {
                     current = parent
                     continue
                 }
@@ -127,7 +127,7 @@ final class SourceSyntax {
                 return .reach
             }
             if parent.is(KeyPathPropertyComponentSyntax.self) {
-                return SourceSyntax.keyPathAccess(Syntax(parent))
+                return keyPathAccess(Syntax(parent), facts: facts)
             }
             if let list = parent.as(ExprListSyntax.self), let sequence = parent.parent, sequence.is(SequenceExprSyntax.self),
                SourceSyntax.passesOn(Array(list), current) {
@@ -160,25 +160,70 @@ final class SourceSyntax {
         return false
     }
 
-    /// What a key path does with the field its component names: writes it
-    /// when it is declared writable, `let path: WritableKeyPath<Queue, [Int]>
-    /// = \.items`; reads it otherwise, as `queues.map(\.label)` does.
-    private static func keyPathAccess(_ component: Syntax) -> Access {
+    /// What a key path does with the field its component names: what is
+    /// done where the key path is used. A key path used in a subscript,
+    /// `q[keyPath: \.items]`, is the field there; one bound to a name is used
+    /// wherever the name is, in the code that binds it; one passed to a
+    /// function is written when the function takes a writable key path; one
+    /// declared writable where it is bound writes. Of several uses, the most
+    /// it does counts.
+    private func keyPathAccess(_ component: Syntax, facts: NameFacts) -> Access {
         var at: Syntax? = component
         while let node = at, !node.is(KeyPathExprSyntax.self) { at = node.parent }
-        guard let binding = at?.parent?.as(InitializerClauseSyntax.self)?.parent?.as(PatternBindingSyntax.self),
-              let written = binding.typeAnnotation?.type else {
-            // FIXME(INCOMPLETE_IMPLEMENTATION): only a key path declared writable
-            // where it is bound is known to write. One whose writability is
-            // inferred, passed as an argument, or returned (`let p = \Queue.items`
-            // then `q[keyPath: p].removeAll()`) is taken for a read, so a write
-            // through it is missed. Every key path component that names a field
-            // takes this path. Done when a key path's use is followed to where it
-            // writes, with tests for inferred, passed and read-only key paths.
+        guard let keyPath = at else { return .copy }
+        if let binding = keyPath.parent?.as(InitializerClauseSyntax.self)?.parent?.as(PatternBindingSyntax.self) {
+            if let written = binding.typeAnnotation?.type.as(IdentifierTypeSyntax.self)?.name.text,
+               written == "WritableKeyPath" || written == "ReferenceWritableKeyPath" {
+                return .reach
+            }
+            guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+                  let scope = SourceSyntax.scope(of: Syntax(binding)) else {
+                return .copy
+            }
+            let uses = scope.tokens(viewMode: .sourceAccurate).filter { token in
+                token.text == name && token.positionAfterSkippingLeadingTrivia > binding.endPosition
+                    && token.parent?.is(DeclReferenceExprSyntax.self) == true
+            }
+            return uses.compactMap { $0.parent }.map { use(of: $0, facts: facts) }.max() ?? .copy
+        }
+        return use(of: keyPath, facts: facts)
+    }
+
+    /// What is done with a key path, written at `value`, where it is used.
+    private func use(of value: Syntax, facts: NameFacts) -> Access {
+        guard let argument = value.parent?.as(LabeledExprSyntax.self),
+              let list = argument.parent?.as(LabeledExprListSyntax.self) else {
+            // FIXME(INCOMPLETE_IMPLEMENTATION): a key path that is neither used
+            // in a subscript, nor passed to a function, nor bound to a name used
+            // so in the code that binds it (one stored in a property, returned,
+            // or put in a collection) is taken for a read of its field, so a
+            // write through it elsewhere is missed. Every such key path takes
+            // this path. Done when a key path is followed through properties
+            // and returns, with tests for each.
             return .copy
         }
-        let name = written.as(IdentifierTypeSyntax.self)?.name.text
-        return name == "WritableKeyPath" || name == "ReferenceWritableKeyPath" ? .reach : .copy
+        if let subscripted = list.parent?.as(SubscriptCallExprSyntax.self), argument.label?.text == "keyPath" {
+            return access(of: Syntax(subscripted), facts: facts)
+        }
+        if let call = list.parent?.as(FunctionCallExprSyntax.self), let callee = SourceSyntax.calleeName(call) {
+            return facts.takesWritableKeyPath(position(callee)) ? .reach : .copy
+        }
+        return .copy
+    }
+
+    /// The name a call names: `write` for `write(&q, \.items)` and `q.write(\.items)`.
+    private static func calleeName(_ call: FunctionCallExprSyntax) -> TokenSyntax? {
+        if let name = call.calledExpression.as(DeclReferenceExprSyntax.self) { return name.baseName }
+        if let member = call.calledExpression.as(MemberAccessExprSyntax.self) { return member.declName.baseName }
+        return nil
+    }
+
+    /// The code a declaration is written in: the innermost list of
+    /// statements around it.
+    private static func scope(of node: Syntax) -> Syntax? {
+        var at = node.parent
+        while let current = at, !current.is(CodeBlockItemListSyntax.self) { at = current.parent }
+        return at
     }
 
     /// Members that lend a view of a value to read it, as Rust's `as_bytes`

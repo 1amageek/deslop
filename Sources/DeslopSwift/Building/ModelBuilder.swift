@@ -41,6 +41,11 @@ struct ModelBuilder {
     /// Where the index names a type, of the workspace or not: what tells a
     /// call that constructs a value from any other call.
     private var typeSites: Set<Site> = []
+    /// Where code calls a function, of the workspace or not, whose
+    /// signature takes a writable key path, as its USR says.
+    private var writableKeyPathCalls: Set<Site> = []
+    /// By function, its USR, which says its signature.
+    private var usrOfItem: [ItemID: String] = [:]
     /// By reference: where it is, and whether the index says it writes.
     private var referenceSites: [(site: Site, writes: Bool)] = []
 
@@ -73,6 +78,10 @@ struct ModelBuilder {
     // MARK: - Items
 
     private mutating func addTypeSites(_ source: Source) {
+        for occurrence in source.occurrences
+        where occurrence.roles.contains(.call) && occurrence.symbol.usr.contains("WritableKeyPath") {
+            writableKeyPathCalls.insert(Site(file: source.file, position: SourcePosition(line: occurrence.line, column: occurrence.column)))
+        }
         let types: Set<IndexSymbol.Kind> = [.struct, .class, .enum, .protocol, .union, .typeAlias]
         for occurrence in source.occurrences
         where occurrence.roles.contains(.reference) && types.contains(occurrence.symbol.kind)
@@ -147,6 +156,7 @@ struct ModelBuilder {
                 holdsNothing: shape.kind == .field && fieldType(declaration, in: source.file).map(TypeFacts.holdsNothing) == true
             ))
             itemOfUSR[symbol.usr] = id
+            usrOfItem[id] = symbol.usr
             if let parent = occurrence.related(.childOf) {
                 parentUSR[id] = parent.usr
             }
@@ -156,22 +166,34 @@ struct ModelBuilder {
         }
     }
 
-    /// Marks as implementing an interface each function of a type whose name
-    /// is a requirement of a protocol the type conforms to, through any
+    /// Marks as implementing an interface each function of a type that meets
+    /// a requirement of a protocol the type conforms to, through any
     /// refinement: the index relates a witness to its requirement only when
     /// the conformance is declared where the witness is written, and a
     /// method written in a type's body may meet one declared in an empty
-    /// extension. Requirements are told apart by name only, so an overload
-    /// that shares a requirement's name is taken for its witness too.
+    /// extension. A function meets a requirement of its name whose signature,
+    /// as their USRs write it, is its own; or, when the requirement's
+    /// signature names `Self` or an associated type and so differs, when it
+    /// is the only function of that name in its type.
     private mutating func markWitnesses() {
         var declaredBy: [String: Set<String>] = [:]
         for (conformer, declared) in conformances {
             declaredBy[extendedType[conformer] ?? conformer, default: []].formUnion(declared)
         }
+        var sameName: [String: Int] = [:]
+        for (item, usr) in parentUSR where model.item(item).kind == .function {
+            sameName[(extendedType[usr] ?? usr) + " " + model.item(item).name, default: 0] += 1
+        }
         for (item, usr) in parentUSR where model.item(item).kind == .function && !model.item(item).implementsInterface {
-            let declared = declaredBy[extendedType[usr] ?? usr] ?? []
+            let type = extendedType[usr] ?? usr
             let name = model.item(item).name
-            if protocols.requires(name, ofAny: declared) {
+            let match = protocols.match(
+                name,
+                signature: usrOfItem[item].flatMap { Protocols.signature(usr: $0, name: name) },
+                ofAny: declaredBy[type] ?? []
+            )
+            let only = sameName[type + " " + name] == 1
+            if match == .signature || (match == .name && only) {
                 model.items[item.index].implementsInterface = true
             }
         }
@@ -279,12 +301,19 @@ struct ModelBuilder {
         syntaxOfFile[file]
     }
 
-    private func isField(_ file: FileID) -> (SourcePosition) -> Bool {
+    /// What the index says of the names of `file` that its syntax cannot tell.
+    private func facts(_ file: FileID) -> NameFacts {
         let namedAt = namedAt
         let items = model.items
-        return { position in
-            (namedAt[Site(file: file, position: position)] ?? []).contains { items[$0.index].kind == .field }
-        }
+        let writableKeyPathCalls = writableKeyPathCalls
+        return NameFacts(
+            isField: { position in
+                (namedAt[Site(file: file, position: position)] ?? []).contains { items[$0.index].kind == .field }
+            },
+            takesWritableKeyPath: { position in
+                writableKeyPathCalls.contains(Site(file: file, position: position))
+            }
+        )
     }
 
     private func declaration(of item: ItemID) -> Declaration? {
@@ -316,10 +345,10 @@ struct ModelBuilder {
         let (site, writes) = referenceSites[index]
         if writes { return .reach }
         guard let syntax = syntax(of: site.file) else { return .reach }
-        let isField = isField(site.file)
+        let facts = facts(site.file)
         return propertyLike
-            ? syntax.access(at: site.position, isField: isField)
-            : syntax.callAccess(at: site.position, isField: isField)
+            ? syntax.access(at: site.position, facts: facts)
+            : syntax.callAccess(at: site.position, facts: facts)
     }
 
     /// Marks the references to fields that only read the field's value.
