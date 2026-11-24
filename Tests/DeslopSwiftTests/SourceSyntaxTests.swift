@@ -102,9 +102,9 @@ struct SourceSyntaxTests {
 
     @Test("a file's lines are every line, the last without a break too")
     func lineCount() {
-        #expect(PackageLayout.lineCount("") == 0)
-        #expect(PackageLayout.lineCount("a\n") == 1)
-        #expect(PackageLayout.lineCount("a\n\nb") == 3)
-        #expect(PackageLayout.lineCount("a\r\nb\r\n") == 2)
+        #expect(Layout.lineCount("") == 0)
+        #expect(Layout.lineCount("a\n") == 1)
+        #expect(Layout.lineCount("a\n\nb") == 3)
+        #expect(Layout.lineCount("a\r\nb\r\n") == 2)
     }
 }

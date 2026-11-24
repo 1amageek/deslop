@@ -49,7 +49,7 @@ struct ModelBuilder {
     /// By reference: where it is, and whether the index says it writes.
     private var referenceSites: [(site: Site, writes: Bool)] = []
 
-    init(layout: PackageLayout, sources: [Source], systemProtocols: Protocols = Protocols()) {
+    init(layout: Layout, sources: [Source], systemProtocols: Protocols = Protocols()) {
         protocols = systemProtocols
         model = Model(
             language: Language(name: "swift", pathSeparator: "."),
